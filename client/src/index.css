@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Noto Sans SC", "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-surface: #0f1419;
+  --color-surface-2: #1a222d;
+  --color-border: #2a3544;
+  --color-accent: #3b82f6;
+  --color-accent-muted: #1d4ed8;
+}
+
+body {
+  @apply bg-[#0b0f14] text-slate-100 antialiased font-sans min-h-screen;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(16, 185, 129, 0.08), transparent);
+}
