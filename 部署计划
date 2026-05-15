@@ -1,0 +1,57 @@
+一、让 API 用上最新构建
+重启 Node 运行环境（1Panel → 网站 → 运行环境 → dizhi → 重启），或在宿主机执行：
+docker restart dizhi
+自检（在宿主机）：
+curl -sS http://127.0.0.1:3889/api/health
+应返回带 "ok":true 的 JSON。
+二、网站（浏览器能打开的页面）
+1Panel → 网站：确认已为域名（如 dizhi.hnzhcyy.cn）建好 静态网站（或等价类型）。
+记下该站点的 网站根目录（面板里显示的路径，常见在 /opt/1panel/www/sites/... 下）。
+把 client/dist 里的全部文件 放到这个网站根目录：
+若站点与代码同机：可从宿主机把 /opt/1panel/www/dizhi/client/dist/*（或你宿主机上实际 clone 路径下的 client/dist）复制到站点根；
+若只有容器里有最新构建：从容器拷出，例如：
+docker cp dizhi:/app/client/dist/. /你的站点根目录/
+站点配置里保证 SPA：location / 使用 try_files $uri $uri/ /index.html;（若创建站点时已带可不改）。
+DNS：域名 A 记录 指向本机公网 IP。
+三、反代 /api（必须）
+在 该网站 → OpenResty/Nginx 配置（高级/自定义）中增加 location /api/，把请求转发到：
+
+http://127.0.0.1:3889
+
+（常用：proxy_pass http://127.0.0.1:3889/api/;，注意与文档示例一致的 斜杠；并带上 Host、X-Real-IP、X-Forwarded-For、X-Forwarded-Proto $scheme。）
+
+保存后 重载 OpenResty。
+
+浏览器里应使用 同域名 访问（例如 http://域名 或 https://域名），前端里的 fetch('/api/...') 才会和 Cookie 会话一致。
+
+四、HTTPS（建议尽快做）
+在 1Panel 里为该站点 申请 SSL，开启 强制 HTTPS。
+在 运行环境 → 环境变量 中同步修改：
+CLIENT_ORIGIN → https://你的域名（与浏览器完全一致）
+COOKIE_SECURE → 1（仅在上 HTTPS 之后）
+保存并 重启 dizhi 容器。
+五、权限与数据
+确认 server/data/（库文件、uploads）在挂载卷上，容器重启后仍在；业务员上传、登录数据不丢。
+若写库/上传报权限错，在宿主机上检查 /opt/1panel/www/dizhi/server/data（或实际挂载路径）的属主是否与容器内运行用户一致。
+六、安全与收尾
+云安全组 / 防火墙：对外只放行 80、443、22（及 1Panel 端口若需要）；不要把 3889 对公网大范围开放（本机 Nginx 反代即可）。
+浏览器 完整走一遍：打开首页 → 登录 → 挂靠 / 上传 / 管理员菜单。
+修改默认账号密码（README 里的演示账号）。
+计划任务：定期备份 server/data/（或整站数据目录）。
+七、以后发版（简要）
+宿主机更新代码：cd /opt/1panel/www/dizhi && git pull（在宿主机有 git 时）。
+
+进容器构建：
+
+docker exec -it dizhi sh
+cd /app
+unset NODE_ENV
+npm ci
+npm run build
+exit
+docker restart dizhi；若前端有变，再把 /app/client/dist 同步到网站根（或 docker cp）。
+
+顺序口诀
+重启 API → 拷 client/dist 到站点根 → 配 /api 反代 →（可选先 HTTP）再开 HTTPS 并改 CLIENT_ORIGIN / COOKIE_SECURE → 测全流程 → 改密码 → 备份。
+
+若某一步报错，把 现象（浏览器 / curl） 或 OpenResty 错误日志一两行 发出来即可对症查。

@@ -51,6 +51,12 @@ function collectAffiliationDraftUpdates(b) {
             if (k === "notes") {
                 vals.push(b[k] == null || b[k] === "" ? null : String(b[k]));
             }
+            else if (k === "service_type") {
+                vals.push(affiliationServiceTypeOrDefault(b[k]));
+            }
+            else if (k === "applicant_dept") {
+                vals.push(b[k] == null || b[k] === "" ? "" : String(b[k]).trim());
+            }
             else {
                 vals.push(String(b[k]));
             }
@@ -115,8 +121,23 @@ app.use("/api/auth", authRouter);
 const api = express.Router();
 api.use(requireAuth);
 const ADDRESS_TYPES = ["affiliation", "coworking", "business_secretary"];
+const AFFILIATION_SERVICE_TYPES = ["地址挂靠", "集中办公区", "商务秘书"];
 function isAddressType(v) {
     return typeof v === "string" && ADDRESS_TYPES.includes(v);
+}
+function affiliationServiceTypeOrDefault(v) {
+    if (typeof v === "string" && AFFILIATION_SERVICE_TYPES.includes(v)) {
+        return v;
+    }
+    return "地址挂靠";
+}
+function canAccessAffiliationRow(req, row) {
+    if (req.session.role === "admin")
+        return true;
+    const uid = req.session.userId;
+    if (!uid)
+        return false;
+    return row.created_by_user_id === uid;
 }
 /** 业务员建单时选用地址（只读） */
 api.get("/address-choices", (_req, res) => {
@@ -314,7 +335,7 @@ api.delete("/users/:id", requireAdmin, (req, res) => {
     db.prepare("DELETE FROM users WHERE id = ?").run(id);
     res.status(204).send();
 });
-/** 法人身份证照片：multipart 上传后返回可存入申请的 URL 路径 */
+/** 法人身份证 / 执照：multipart 上传后返回可存入申请的 URL 路径 */
 api.post("/affiliations/uploads/id-photo", (req, res, next) => {
     idPhotoMulter.single("file")(req, res, (err) => {
         if (err) {
@@ -333,6 +354,24 @@ api.post("/affiliations/uploads/id-photo", (req, res, next) => {
         return res.status(400).json({ error: "请选择身份证照片文件" });
     res.status(201).json({ url: `/api/uploads/${f.filename}` });
 });
+api.post("/affiliations/uploads/license-photo", (req, res, next) => {
+    idPhotoMulter.single("file")(req, res, (err) => {
+        if (err) {
+            if (err instanceof multer.MulterError) {
+                const msg = err.code === "LIMIT_FILE_SIZE" ? "单张图片不超过 8MB" : err.message;
+                return res.status(400).json({ error: msg });
+            }
+            const e = err;
+            return res.status(400).json({ error: e.message || "上传失败" });
+        }
+        next();
+    });
+}, (req, res) => {
+    const f = req.file;
+    if (!f)
+        return res.status(400).json({ error: "请选择执照照片文件" });
+    res.status(201).json({ url: `/api/uploads/${f.filename}` });
+});
 /** 已登录用户可查看上传的证件图（Cookie 会话） */
 api.get("/uploads/:filename", (req, res) => {
     const name = routeId(req.params.filename);
@@ -344,19 +383,22 @@ api.get("/uploads/:filename", (req, res) => {
         return res.status(404).send("Not found");
     res.sendFile(abs);
 });
-api.get("/affiliations", (_req, res) => {
-    const rows = db
-        .prepare(`SELECT r.*, a.address_type, a.address_region, a.detail_address
+api.get("/affiliations", (req, res) => {
+    const isAdmin = req.session.role === "admin";
+    const uid = req.session.userId;
+    const sqlBase = `SELECT r.*, a.address_type, a.address_region, a.detail_address
        FROM affiliation_requests r
-       JOIN addresses a ON a.id = r.address_id
-       ORDER BY r.updated_at DESC`)
-        .all();
+       JOIN addresses a ON a.id = r.address_id`;
+    const order = ` ORDER BY r.updated_at DESC`;
+    const rows = isAdmin
+        ? db.prepare(sqlBase + order).all()
+        : db.prepare(`${sqlBase} WHERE r.created_by_user_id = ?${order}`).all(uid);
     res.json(rows);
 });
 api.post("/affiliations", (req, res) => {
     const b = req.body;
-    if (!b?.address_id || !b?.applicant_name || !b?.applicant_dept) {
-        return res.status(400).json({ error: "address_id、applicant_name、applicant_dept 为必填" });
+    if (!b?.address_id || !String(b.applicant_name ?? "").trim()) {
+        return res.status(400).json({ error: "address_id、申请人为必填" });
     }
     const addr = db.prepare("SELECT id FROM addresses WHERE id = ?").get(String(b.address_id));
     if (!addr)
@@ -371,6 +413,12 @@ api.post("/affiliations", (req, res) => {
     const id = nanoid();
     const t = nowIso();
     const submittedAt = status === "pending" ? t : null;
+    const applicantDept = b.applicant_dept != null && String(b.applicant_dept).trim() !== "" ? String(b.applicant_dept).trim() : "";
+    const serviceType = affiliationServiceTypeOrDefault(b.service_type);
+    const ownerId = req.session.userId;
+    if (!ownerId) {
+        return res.status(401).json({ error: "未登录" });
+    }
     db.prepare(`INSERT INTO affiliation_requests (
       id, address_id, applicant_name, applicant_dept, service_type, status, notes,
       contact_type, need_address_change,
@@ -378,8 +426,9 @@ api.post("/affiliations", (req, res) => {
       channel_backup_contact_name, channel_backup_contact_phone,
       legal_id_front, legal_id_back, legal_name, legal_phone, legal_contact_address, legal_email,
       enterprise_backup_name, enterprise_backup_phone, license_photo,
+      created_by_user_id,
       created_at, updated_at, submitted_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, String(b.address_id), String(b.applicant_name), String(b.applicant_dept), b.service_type ? String(b.service_type) : "地址挂靠", status, b.notes != null && b.notes !== "" ? String(b.notes) : null, material.contact_type, material.need_address_change, material.channel_common_contact_name, material.channel_common_contact_phone, material.channel_backup_contact_name, material.channel_backup_contact_phone, material.legal_id_front, material.legal_id_back, material.legal_name, material.legal_phone, material.legal_contact_address, material.legal_email, material.enterprise_backup_name, material.enterprise_backup_phone, material.license_photo, t, t, submittedAt);
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, String(b.address_id), String(b.applicant_name).trim(), applicantDept, serviceType, status, b.notes != null && b.notes !== "" ? String(b.notes) : null, material.contact_type, material.need_address_change, material.channel_common_contact_name, material.channel_common_contact_phone, material.channel_backup_contact_name, material.channel_backup_contact_phone, material.legal_id_front, material.legal_id_back, material.legal_name, material.legal_phone, material.legal_contact_address, material.legal_email, material.enterprise_backup_name, material.enterprise_backup_phone, material.license_photo, ownerId, t, t, submittedAt);
     const row = db
         .prepare(`SELECT r.*, a.address_type, a.address_region, a.detail_address
        FROM affiliation_requests r JOIN addresses a ON a.id = r.address_id WHERE r.id = ?`)
@@ -391,6 +440,14 @@ api.patch("/affiliations/:id", (req, res) => {
     const cur = db.prepare("SELECT * FROM affiliation_requests WHERE id = ?").get(id);
     if (!cur)
         return res.status(404).json({ error: "未找到申请" });
+    const isAdmin = req.session.role === "admin";
+    const isApproveReject = req.body?.action === "approve" || req.body?.action === "reject";
+    if (isApproveReject && !isAdmin) {
+        return res.status(403).json({ error: "仅管理员可审批挂靠申请" });
+    }
+    if (!isAdmin && !canAccessAffiliationRow(req, cur)) {
+        return res.status(403).json({ error: "无权操作该申请" });
+    }
     const b = req.body;
     const t = nowIso();
     const applyDraftBodyUpdates = () => {
@@ -433,9 +490,6 @@ api.patch("/affiliations/:id", (req, res) => {
        reviewer_name = NULL, review_comment = NULL, reviewed_at = NULL WHERE id = ?`).run(t, t, id);
     }
     else if (b.action === "approve" || b.action === "reject") {
-        if (req.session.role !== "admin") {
-            return res.status(403).json({ error: "仅管理员可审批挂靠申请" });
-        }
         if (cur.status !== "pending") {
             return res.status(400).json({ error: "仅待审批状态可操作" });
         }
@@ -471,41 +525,67 @@ api.patch("/affiliations/:id", (req, res) => {
     res.json(row);
 });
 api.delete("/affiliations/:id", (req, res) => {
+    const id = routeId(req.params.id);
     const cur = db
-        .prepare("SELECT status FROM affiliation_requests WHERE id = ?")
-        .get(routeId(req.params.id));
+        .prepare("SELECT status, created_by_user_id FROM affiliation_requests WHERE id = ?")
+        .get(id);
     if (!cur)
         return res.status(404).json({ error: "未找到申请" });
-    if (req.session.role !== "admin" && !(req.session.role === "sales" && cur.status === "draft")) {
-        return res.status(403).json({ error: "业务员仅可删除草稿；删除其他记录需管理员" });
+    if (req.session.role !== "admin") {
+        if (!(req.session.role === "sales" && cur.status === "draft")) {
+            return res.status(403).json({ error: "业务员仅可删除草稿；删除其他记录需管理员" });
+        }
+        if (cur.created_by_user_id !== req.session.userId) {
+            return res.status(403).json({ error: "无权删除该申请" });
+        }
     }
-    const r = db.prepare("DELETE FROM affiliation_requests WHERE id = ?").run(routeId(req.params.id));
+    const r = db.prepare("DELETE FROM affiliation_requests WHERE id = ?").run(id);
     if (Number(r.changes) === 0)
         return res.status(404).json({ error: "未找到申请" });
     res.status(204).send();
 });
-api.get("/stats", (_req, res) => {
-    const byType = db
-        .prepare(`SELECT address_type, COUNT(*) AS count FROM addresses GROUP BY address_type`)
-        .all();
+api.get("/stats", (req, res) => {
+    const isAdmin = req.session.role === "admin";
+    const uid = req.session.userId;
+    if (isAdmin) {
+        const byType = db
+            .prepare(`SELECT address_type, COUNT(*) AS count FROM addresses GROUP BY address_type`)
+            .all();
+        const byAffStatus = db
+            .prepare(`SELECT status, COUNT(*) AS count FROM affiliation_requests GROUP BY status`)
+            .all();
+        const totalAddresses = db.prepare("SELECT COUNT(*) AS c FROM addresses").get();
+        const pendingApprovals = db
+            .prepare("SELECT COUNT(*) AS c FROM affiliation_requests WHERE status = 'pending'")
+            .get();
+        const recent = db
+            .prepare(`SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) AS count
+         FROM addresses WHERE created_at >= date('now', '-12 months')
+         GROUP BY month ORDER BY month`)
+            .all();
+        res.json({
+            platformAddressStats: true,
+            totalAddresses: totalAddresses.c,
+            pendingApprovals: pendingApprovals.c,
+            addressesByType: Object.fromEntries(byType.map((x) => [x.address_type, x.count])),
+            affiliationsByStatus: Object.fromEntries(byAffStatus.map((x) => [x.status, x.count])),
+            newAddressesLast12Months: recent,
+        });
+        return;
+    }
     const byAffStatus = db
-        .prepare(`SELECT status, COUNT(*) AS count FROM affiliation_requests GROUP BY status`)
-        .all();
-    const totalAddresses = db.prepare("SELECT COUNT(*) AS c FROM addresses").get();
+        .prepare(`SELECT status, COUNT(*) AS count FROM affiliation_requests WHERE created_by_user_id = ? GROUP BY status`)
+        .all(uid);
     const pendingApprovals = db
-        .prepare("SELECT COUNT(*) AS c FROM affiliation_requests WHERE status = 'pending'")
-        .get();
-    const recent = db
-        .prepare(`SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) AS count
-       FROM addresses WHERE created_at >= date('now', '-12 months')
-       GROUP BY month ORDER BY month`)
-        .all();
+        .prepare("SELECT COUNT(*) AS c FROM affiliation_requests WHERE status = 'pending' AND created_by_user_id = ?")
+        .get(uid);
     res.json({
-        totalAddresses: totalAddresses.c,
+        platformAddressStats: false,
+        totalAddresses: 0,
         pendingApprovals: pendingApprovals.c,
-        addressesByType: Object.fromEntries(byType.map((x) => [x.address_type, x.count])),
+        addressesByType: {},
         affiliationsByStatus: Object.fromEntries(byAffStatus.map((x) => [x.status, x.count])),
-        newAddressesLast12Months: recent,
+        newAddressesLast12Months: [],
     });
 });
 app.use("/api", api);

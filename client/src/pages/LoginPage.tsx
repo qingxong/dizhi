@@ -68,22 +68,6 @@ export default function LoginPage() {
             {pending ? "登录中…" : "登录"}
           </button>
         </form>
-        <p className="text-[11px] text-slate-600 mt-6 leading-relaxed">
-          演示账号：管理员 <code className="text-slate-400">admin</code> / <code className="text-slate-400">admin123</code>
-          ；业务员 <code className="text-slate-400">sales</code> / <code className="text-slate-400">sales123</code>
-          。生产环境请修改默认密码并配置 <code className="text-slate-400">SESSION_SECRET</code>。
-        </p>
-        <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">
-          本地开发请在项目根目录执行 <code className="text-slate-400">npm run dev</code>（同时起前端与后端）；若使用{" "}
-          <code className="text-slate-400">vite preview</code>，须先另开终端执行{" "}
-          <code className="text-slate-400">npm run start -w server</code>。
-        </p>
-        <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">
-          若终端出现 <code className="text-slate-400">EADDRINUSE</code>，说明 API 端口被占用：关掉其它终端里旧的{" "}
-          <code className="text-slate-400">node</code> 进程，或设置环境变量{" "}
-          <code className="text-slate-400">PORT</code> / <code className="text-slate-400">API_PORT</code> 为空闲端口（须与{" "}
-          <code className="text-slate-400">vite.config</code> 代理一致）。
-        </p>
       </div>
     </div>
   );

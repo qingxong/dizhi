@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { api } from "../api";
 import type { AddressChoice, AffiliationContactType, AffiliationRequest } from "../types";
-import { ADDRESS_TYPE_LABELS } from "../types";
+import { ADDRESS_TYPE_LABELS, AFFILIATION_SERVICE_TYPES } from "../types";
 
 const statusStyle: Record<string, string> = {
   draft: "bg-slate-600/30 text-slate-300",
@@ -23,6 +23,23 @@ const contactLabel: Record<AffiliationContactType, string> = {
   channel: "渠道",
   direct: "直客",
 };
+
+type AffiliationStatusFilter = "all" | "draft" | "pending" | "approved" | "rejected";
+
+/** 服务类型与地址库「地址类型」一致，由当前选中的关联地址推导 */
+function serviceTypeSyncedWithAddress(
+  addressId: string,
+  choices: AddressChoice[],
+  /** 编辑弹窗传入：所选地址不在列表时用当前行上的地址类型兜底 */
+  fallbackRow?: AffiliationRequest,
+): string {
+  const found = choices.find((a) => a.id === addressId);
+  if (found) return ADDRESS_TYPE_LABELS[found.address_type];
+  if (fallbackRow && addressId === fallbackRow.address_id) {
+    return ADDRESS_TYPE_LABELS[fallbackRow.address_type];
+  }
+  return AFFILIATION_SERVICE_TYPES[0];
+}
 
 type MaterialFormState = {
   contact_type: AffiliationContactType;
@@ -107,15 +124,17 @@ function inputCls() {
   return "w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white placeholder:text-slate-600";
 }
 
-/** 法人身份证正反面：仅接受文件上传，库中存 `/api/uploads/...` 路径 */
+/** 挂靠材料图片上传（身份证 / 执照），库中存 `/api/uploads/...` 路径 */
 function IdPhotoInput({
   label,
   value,
   onChangeUrl,
+  uploadFile = api.affiliations.uploadIdPhoto,
 }: {
   label: string;
   value: string;
   onChangeUrl: (url: string) => void;
+  uploadFile?: (file: File) => Promise<{ url: string }>;
 }) {
   const [busy, setBusy] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
@@ -130,7 +149,7 @@ function IdPhotoInput({
     setBusy(true);
     setLocalErr(null);
     try {
-      const { url } = await api.affiliations.uploadIdPhoto(file);
+      const { url } = await uploadFile(file);
       onChangeUrl(url);
     } catch (err) {
       setLocalErr((err as Error).message);
@@ -190,7 +209,7 @@ function MaterialFormBody({
     <div className="space-y-4 border-t border-slate-800 pt-4 mt-1">
       <h4 className="text-sm font-medium text-white">地址领取 · 联络人与材料</h4>
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        法人身份证正反面须上传图片文件（JPEG / PNG / WebP，单张不超过 8MB）。办理地址变更时的执照仍可填链接或说明。
+        法人身份证正反面与（若勾选地址变更）执照照片均须上传图片文件（JPEG / PNG / WebP，单张不超过 8MB）。
       </p>
       <div>
         <label className="block text-xs text-slate-500 mb-1">联络人类型 *</label>
@@ -310,20 +329,23 @@ function MaterialFormBody({
           <input
             type="checkbox"
             checked={value.need_address_change}
-            onChange={(e) => onChange({ need_address_change: e.target.checked })}
+            onChange={(e) => {
+              const c = e.target.checked;
+              onChange({
+                need_address_change: c,
+                ...(c ? {} : { license_photo: "" }),
+              });
+            }}
           />
           用于办理地址变更（需上传执照照片）
         </label>
         {value.need_address_change && (
-          <div>
-            <label className="block text-[11px] text-slate-500 mb-1">执照照片 *</label>
-            <input
-              className={inputCls()}
-              placeholder="链接或说明"
-              value={value.license_photo}
-              onChange={(e) => onChange({ license_photo: e.target.value })}
-            />
-          </div>
+          <IdPhotoInput
+            label="执照照片 *"
+            value={value.license_photo}
+            onChangeUrl={(url) => onChange({ license_photo: url })}
+            uploadFile={api.affiliations.uploadLicensePhoto}
+          />
         )}
       </div>
     </div>
@@ -340,6 +362,36 @@ export default function AffiliationsPage() {
   const [showNew, setShowNew] = useState(false);
   const [editRow, setEditRow] = useState<AffiliationRequest | null>(null);
   const [viewRow, setViewRow] = useState<AffiliationRequest | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<AffiliationStatusFilter>("all");
+
+  const filteredRows = useMemo(() => {
+    let list = rows;
+    if (statusFilter !== "all") {
+      list = list.filter((r) => r.status === statusFilter);
+    }
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((r) => {
+      const ct: AffiliationContactType = r.contact_type === "channel" ? "channel" : "direct";
+      const blob = [
+        r.applicant_name,
+        r.address_region,
+        r.detail_address,
+        r.service_type,
+        r.notes,
+        r.reviewer_name,
+        r.review_comment,
+        contactLabel[ct],
+        statusText[r.status] ?? r.status,
+        ADDRESS_TYPE_LABELS[r.address_type],
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return blob.includes(q);
+    });
+  }, [rows, statusFilter, searchQuery]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -378,6 +430,40 @@ export default function AffiliationsPage() {
 
       {err && <p className="text-red-400 text-sm">{err}</p>}
 
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3">
+        <div className="flex-1 min-w-[200px] max-w-md">
+          <label htmlFor="affiliation-search" className="block text-xs text-slate-500 mb-1">
+            查询
+          </label>
+          <input
+            id="affiliation-search"
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="申请人、地址、说明、状态…"
+            className={inputCls()}
+            autoComplete="off"
+          />
+        </div>
+        <div className="w-full sm:w-auto sm:min-w-[180px]">
+          <label htmlFor="affiliation-status-filter" className="block text-xs text-slate-500 mb-1">
+            状态筛选
+          </label>
+          <select
+            id="affiliation-status-filter"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as AffiliationStatusFilter)}
+            className={inputCls()}
+          >
+            <option value="all">全部状态</option>
+            <option value="draft">草稿</option>
+            <option value="pending">待审批</option>
+            <option value="approved">已通过</option>
+            <option value="rejected">已驳回</option>
+          </select>
+        </div>
+      </div>
+
       <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900/20">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left min-w-[920px]">
@@ -404,8 +490,14 @@ export default function AffiliationsPage() {
                     暂无申请
                   </td>
                 </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                    无匹配结果，可调整关键词或状态筛选
+                  </td>
+                </tr>
               ) : (
-                rows.map((r) => (
+                filteredRows.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-800/30">
                     <td className="px-4 py-3">
                       <div className="text-xs text-violet-300/90 font-medium">
@@ -418,7 +510,7 @@ export default function AffiliationsPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-300">
                       {r.applicant_name}
-                      <div className="text-xs text-slate-500">{r.applicant_dept}</div>
+                      <div className="text-xs text-slate-500">{r.service_type}</div>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-400">
                       <span className="text-slate-300">{contactLabel[r.contact_type === "channel" ? "channel" : "direct"]}</span>
@@ -670,7 +762,7 @@ function ViewMaterialModal({ row, onClose }: { row: AffiliationRequest; onClose:
           <div className="rounded-lg border border-slate-800 p-3 space-y-2">
             <div className="text-xs font-medium text-slate-400">地址变更</div>
             <div className="text-slate-300">{row.need_address_change ? "是 · 需提供执照" : "否"}</div>
-            {!!row.need_address_change && <Field label="执照照片" value={row.license_photo} />}
+            {!!row.need_address_change && <IdPhotoReadonly label="执照照片" url={row.license_photo} />}
           </div>
         </div>
       </div>
@@ -692,8 +784,6 @@ function EditAffiliationModal({
   const isDraft = row.status === "draft";
   const [addressId, setAddressId] = useState(row.address_id);
   const [applicantName, setApplicantName] = useState(row.applicant_name);
-  const [applicantDept, setApplicantDept] = useState(row.applicant_dept);
-  const [serviceType, setServiceType] = useState(row.service_type || "地址挂靠");
   const [notes, setNotes] = useState(row.notes ?? "");
   const [mat, setMat] = useState<MaterialFormState>(() => rowToMaterial(row));
   const [saving, setSaving] = useState(false);
@@ -702,8 +792,8 @@ function EditAffiliationModal({
   const basePayload = () => ({
     address_id: addressId,
     applicant_name: applicantName.trim(),
-    applicant_dept: applicantDept.trim(),
-    service_type: serviceType.trim() || "地址挂靠",
+    applicant_dept: "",
+    service_type: serviceTypeSyncedWithAddress(addressId, addressChoices, row),
     notes: notes.trim() || null,
     ...materialToApiBody(mat),
   });
@@ -789,15 +879,14 @@ function EditAffiliationModal({
           </select>
           <label className="block text-xs text-slate-500">申请人 *</label>
           <input required value={applicantName} onChange={(e) => setApplicantName(e.target.value)} className={inputCls()} />
-          <label className="block text-xs text-slate-500">申请部门 *</label>
-          <input required value={applicantDept} onChange={(e) => setApplicantDept(e.target.value)} className={inputCls()} />
           <label className="block text-xs text-slate-500">服务类型</label>
-          <input
-            value={serviceType}
-            onChange={(e) => setServiceType(e.target.value)}
-            className={inputCls()}
-            placeholder="如：地址挂靠"
-          />
+          <div
+            className={`${inputCls()} flex flex-wrap items-center justify-between gap-2 cursor-default`}
+            title="与上方所选关联地址的类型一致"
+          >
+            <span className="text-slate-200">{serviceTypeSyncedWithAddress(addressId, addressChoices, row)}</span>
+            <span className="text-[11px] text-slate-500 shrink-0">随关联地址自动同步</span>
+          </div>
           <label className="block text-xs text-slate-500">说明</label>
           <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls()} />
           <MaterialFormBody value={mat} onChange={(p) => setMat((prev) => ({ ...prev, ...p }))} />
@@ -836,15 +925,20 @@ function NewAffiliationModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const { user } = useAuth();
   const [addressId, setAddressId] = useState(addressChoices[0]?.id ?? "");
-  const [applicantName, setApplicantName] = useState("");
-  const [applicantDept, setApplicantDept] = useState("");
-  const [serviceType, setServiceType] = useState("地址挂靠");
+  const [applicantName, setApplicantName] = useState(() => user?.displayName ?? "");
   const [notes, setNotes] = useState("");
   const [mat, setMat] = useState<MaterialFormState>(emptyMaterial);
   const [submitNow, setSubmitNow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user?.displayName) {
+      setApplicantName((prev) => (prev.trim() === "" ? user.displayName : prev));
+    }
+  }, [user?.displayName]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -857,9 +951,9 @@ function NewAffiliationModal({
     try {
       await api.affiliations.create({
         address_id: addressId,
-        applicant_name: applicantName,
-        applicant_dept: applicantDept,
-        service_type: serviceType.trim() || "地址挂靠",
+        applicant_name: applicantName.trim(),
+        applicant_dept: "",
+        service_type: serviceTypeSyncedWithAddress(addressId, addressChoices),
         notes: notes || undefined,
         status: submitNow ? "pending" : undefined,
         ...materialToApiBody(mat),
@@ -908,16 +1002,14 @@ function NewAffiliationModal({
             onChange={(e) => setApplicantName(e.target.value)}
             className={inputCls()}
           />
-          <label className="block text-xs text-slate-500">申请部门 *</label>
-          <input
-            required
-            value={applicantDept}
-            onChange={(e) => setApplicantDept(e.target.value)}
-            className={inputCls()}
-            placeholder="如：法务合规部"
-          />
           <label className="block text-xs text-slate-500">服务类型</label>
-          <input value={serviceType} onChange={(e) => setServiceType(e.target.value)} className={inputCls()} />
+          <div
+            className={`${inputCls()} flex flex-wrap items-center justify-between gap-2 cursor-default`}
+            title="与上方所选关联地址的类型一致"
+          >
+            <span className="text-slate-200">{serviceTypeSyncedWithAddress(addressId, addressChoices)}</span>
+            <span className="text-[11px] text-slate-500 shrink-0">随关联地址自动同步</span>
+          </div>
           <label className="block text-xs text-slate-500">说明</label>
           <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls()} />
           <MaterialFormBody value={mat} onChange={(p) => setMat((prev) => ({ ...prev, ...p }))} />

@@ -102,6 +102,16 @@ export const api = {
         body: fd,
       }).then((r) => parseJson<{ url: string }>(r));
     },
+    /** 办理地址变更时的执照：JPEG / PNG / WebP，单张最大 8MB */
+    uploadLicensePhoto: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return fetch("/api/affiliations/uploads/license-photo", {
+        ...cred,
+        method: "POST",
+        body: fd,
+      }).then((r) => parseJson<{ url: string }>(r));
+    },
   },
   stats: () => fetch("/api/stats", cred).then((r) => parseJson<StatsResponse>(r)),
   users: {

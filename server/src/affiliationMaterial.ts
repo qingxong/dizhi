@@ -82,7 +82,7 @@ export function validateAffiliationMaterial(row: Record<string, unknown>): strin
 
   const need = row.need_address_change === 1 || row.need_address_change === true;
   if (need && !nonempty(row.license_photo)) {
-    return "已勾选办理地址变更：请提供执照照片（可填附件链接或说明）";
+    return "已勾选办理地址变更：请上传执照照片";
   }
 
   return null;

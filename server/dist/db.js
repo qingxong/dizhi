@@ -33,7 +33,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     address_id TEXT NOT NULL REFERENCES addresses(id) ON DELETE CASCADE,
     applicant_name TEXT NOT NULL,
-    applicant_dept TEXT NOT NULL,
+    applicant_dept TEXT NOT NULL DEFAULT '',
     service_type TEXT NOT NULL DEFAULT '地址挂靠',
     status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'approved', 'rejected')),
     notes TEXT,
@@ -57,7 +57,8 @@ db.exec(`
     legal_email TEXT,
     enterprise_backup_name TEXT,
     enterprise_backup_phone TEXT,
-    license_photo TEXT
+    license_photo TEXT,
+    created_by_user_id TEXT
   );
 
   CREATE TABLE IF NOT EXISTS users (
@@ -96,13 +97,30 @@ db.exec(`
     add("enterprise_backup_name", "TEXT");
     add("enterprise_backup_phone", "TEXT");
     add("license_photo", "TEXT");
+    add("created_by_user_id", "TEXT");
 }
+db.exec("CREATE INDEX IF NOT EXISTS idx_affiliation_owner ON affiliation_requests(created_by_user_id)");
 const userCount = db.prepare("SELECT COUNT(*) AS c FROM users").get().c;
 if (userCount === 0) {
     const t = new Date().toISOString();
     const rounds = 10;
     db.prepare(`INSERT INTO users (id, username, password_hash, role, display_name, created_at) VALUES (?,?,?,?,?,?)`).run("user_admin", "admin", bcrypt.hashSync("admin123", rounds), "admin", "系统管理员", t);
     db.prepare(`INSERT INTO users (id, username, password_hash, role, display_name, created_at) VALUES (?,?,?,?,?,?)`).run("user_sales", "sales", bcrypt.hashSync("sales123", rounds), "sales", "业务员演示", t);
+}
+{
+    const cols = db.prepare("PRAGMA table_info(affiliation_requests)").all();
+    if (cols.some((c) => c.name === "created_by_user_id")) {
+        const adm = db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1").get();
+        if (adm) {
+            db.prepare("UPDATE affiliation_requests SET created_by_user_id = ? WHERE created_by_user_id IS NULL").run(adm.id);
+        }
+        const salesRow = db
+            .prepare("SELECT id FROM users WHERE username = 'sales' COLLATE NOCASE LIMIT 1")
+            .get();
+        if (salesRow) {
+            db.prepare("UPDATE affiliation_requests SET created_by_user_id = ? WHERE id = 'aff_demo_1'").run(salesRow.id);
+        }
+    }
 }
 const count = db.prepare("SELECT COUNT(*) AS c FROM addresses").get().c;
 if (count === 0) {
@@ -124,6 +142,7 @@ if (count === 0) {
       channel_backup_contact_name, channel_backup_contact_phone,
       legal_id_front, legal_id_back, legal_name, legal_phone, legal_contact_address, legal_email,
       enterprise_backup_name, enterprise_backup_phone, license_photo,
+      created_by_user_id,
       created_at, updated_at, submitted_at, reviewed_at, reviewer_name, review_comment
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(r1, a1, "赵晨", "法务合规部", "地址挂靠", "pending", "年度续签挂靠服务", "channel", 0, "渠道王", "13800001111", "渠道李", "13800002222", "https://example.com/id-front-demo.jpg", "https://example.com/id-back-demo.jpg", "法人张", "13900003333", "上海市浦东新区张江路1号", "zhang@example.com", "企业备周", "13900004444", null, t, t, t, null, null, null);
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(r1, a1, "赵晨", "", "地址挂靠", "pending", "年度续签挂靠服务", "channel", 0, "渠道王", "13800001111", "渠道李", "13800002222", "https://example.com/id-front-demo.jpg", "https://example.com/id-back-demo.jpg", "法人张", "13900003333", "上海市浦东新区张江路1号", "zhang@example.com", "企业备周", "13900004444", null, "user_sales", t, t, t, null, null, null);
 }

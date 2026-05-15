@@ -30,6 +30,9 @@ export default function DashboardPage() {
     return <div className="text-slate-500 text-sm animate-pulse">加载中…</div>;
   }
 
+  const showPlatformAddressStats = stats.platformAddressStats !== false;
+  const myAffiliationTotal = Object.values(stats.affiliationsByStatus).reduce((a, b) => a + b, 0);
+
   const aff = stats.addressesByType["affiliation"] ?? 0;
   const cow = stats.addressesByType["coworking"] ?? 0;
   const sec = stats.addressesByType["business_secretary"] ?? 0;
@@ -41,7 +44,11 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <div>
         <h2 className="text-xl font-semibold text-white">工作台</h2>
-        <p className="text-slate-400 text-sm mt-1">快速掌握地址资源与挂靠审批负荷。</p>
+        <p className="text-slate-400 text-sm mt-1">
+          {showPlatformAddressStats
+            ? "快速掌握地址资源与挂靠审批负荷。"
+            : "以下为当前账号创建的挂靠申请统计；全平台地址资源仅管理员可见。"}
+        </p>
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -51,25 +58,43 @@ export default function DashboardPage() {
             <p className="text-3xl font-semibold text-white mt-2 tabular-nums">{stats.totalAddresses}</p>
             <p className="text-xs text-slate-500 mt-2 group-hover:text-slate-400">进入地址库维护 →</p>
           </Link>
-        ) : (
+        ) : showPlatformAddressStats ? (
           <div className={cardBase + " cursor-default hover:border-slate-800"}>
             <p className="text-xs uppercase tracking-wide text-slate-500">地址资源总数</p>
             <p className="text-3xl font-semibold text-white mt-2 tabular-nums">{stats.totalAddresses}</p>
             <p className="text-xs text-slate-600 mt-2">地址库仅管理员可维护</p>
           </div>
+        ) : (
+          <Link to="/affiliations" className={cardBase}>
+            <p className="text-xs uppercase tracking-wide text-slate-500">我的挂靠申请</p>
+            <p className="text-3xl font-semibold text-white mt-2 tabular-nums">{myAffiliationTotal}</p>
+            <p className="text-xs text-slate-500 mt-2 group-hover:text-slate-400">查看我的申请列表 →</p>
+          </Link>
         )}
         <Link to="/affiliations" className={cardBase}>
-          <p className="text-xs uppercase tracking-wide text-slate-500">待审批挂靠</p>
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            {showPlatformAddressStats ? "待审批挂靠" : "我的待审批申请"}
+          </p>
           <p className="text-3xl font-semibold text-white mt-2 tabular-nums">{stats.pendingApprovals}</p>
           <p className="text-xs text-slate-500 mt-2 group-hover:text-slate-400">需及时处理 →</p>
         </Link>
-        <TypeStatCard title={ADDRESS_TYPE_LABELS.affiliation} count={aff} admin={isAdmin} />
-        <TypeStatCard title={`${ADDRESS_TYPE_LABELS.coworking} / ${ADDRESS_TYPE_LABELS.business_secretary}`} count={cow + sec} admin={isAdmin} />
+        {showPlatformAddressStats ? (
+          <>
+            <TypeStatCard title={ADDRESS_TYPE_LABELS.affiliation} count={aff} admin={isAdmin} />
+            <TypeStatCard
+              title={`${ADDRESS_TYPE_LABELS.coworking} / ${ADDRESS_TYPE_LABELS.business_secretary}`}
+              count={cow + sec}
+              admin={isAdmin}
+            />
+          </>
+        ) : null}
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-6">
-          <h3 className="text-sm font-medium text-slate-300 mb-4">挂靠申请状态分布</h3>
+          <h3 className="text-sm font-medium text-slate-300 mb-4">
+            {stats.platformAddressStats === false ? "我的挂靠申请状态" : "挂靠申请状态分布"}
+          </h3>
           <ul className="space-y-2">
             {Object.entries(stats.affiliationsByStatus).map(([k, v]) => (
               <li key={k} className="flex justify-between text-sm">
