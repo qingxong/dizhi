@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { api } from "../api";
 import {
-  normalizeAddressTypeForClient,
   parseAddressImportFromMatrix,
   parseAddressImportText,
 } from "../utils/parseAddressImport.ts";

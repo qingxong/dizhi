@@ -83,7 +83,7 @@ export function validateAffiliationMaterial(row) {
         return "请填写企业备用联系人电话";
     const need = row.need_address_change === 1 || row.need_address_change === true;
     if (need && !nonempty(row.license_photo)) {
-        return "已勾选办理地址变更：请上传执照照片";
+        return "已选择用于办理地址变更：请上传执照照片";
     }
     return null;
 }

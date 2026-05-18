@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import multer from "multer";
+import { ADDRESS_ADMIN_SELECT, AFFILIATION_ROW_SELECT, findAvailableAddressId, getAddressAdminById, isAddressOccupied, isRegionValidForAddressType, listRegionsForAddressType, } from "./affiliationAddress.js";
 import { materialFromBody, materialPatchFromBody, validateAffiliationMaterial, } from "./affiliationMaterial.js";
 import { db } from "./db.js";
 import { ID_PHOTO_UPLOAD_DIR, idPhotoMulter } from "./idPhotoUpload.js";
@@ -44,15 +45,12 @@ function nowIso() {
 function collectAffiliationDraftUpdates(b) {
     const fields = [];
     const vals = [];
-    const allowedText = ["applicant_name", "applicant_dept", "service_type", "notes"];
+    const allowedText = ["applicant_name", "applicant_dept", "notes", "group_name"];
     for (const k of allowedText) {
         if (b[k] !== undefined) {
             fields.push(`${k} = ?`);
-            if (k === "notes") {
-                vals.push(b[k] == null || b[k] === "" ? null : String(b[k]));
-            }
-            else if (k === "service_type") {
-                vals.push(affiliationServiceTypeOrDefault(b[k]));
+            if (k === "notes" || k === "group_name") {
+                vals.push(b[k] == null || b[k] === "" ? null : String(b[k]).trim());
             }
             else if (k === "applicant_dept") {
                 vals.push(b[k] == null || b[k] === "" ? "" : String(b[k]).trim());
@@ -62,9 +60,21 @@ function collectAffiliationDraftUpdates(b) {
             }
         }
     }
-    if (b.address_id !== undefined) {
-        fields.push("address_id = ?");
-        vals.push(String(b.address_id));
+    if (b.requested_address_type !== undefined) {
+        if (!isAddressType(b.requested_address_type)) {
+            return { fields, vals, error: "地址类型不合法" };
+        }
+        fields.push("requested_address_type = ?");
+        vals.push(b.requested_address_type);
+        fields.push("service_type = ?");
+        vals.push(serviceTypeFromAddressType(b.requested_address_type));
+    }
+    if (b.requested_address_region !== undefined) {
+        const reg = String(b.requested_address_region).trim();
+        if (!reg)
+            return { fields, vals, error: "地址区域不能为空" };
+        fields.push("requested_address_region = ?");
+        vals.push(reg);
     }
     const mp = materialPatchFromBody(b);
     for (const [k, v] of Object.entries(mp)) {
@@ -125,11 +135,30 @@ const AFFILIATION_SERVICE_TYPES = ["地址挂靠", "集中办公区", "商务秘
 function isAddressType(v) {
     return typeof v === "string" && ADDRESS_TYPES.includes(v);
 }
+const ADDRESS_TYPE_CN_TO_EN = {
+    地址挂靠: "affiliation",
+    集中办公区: "coworking",
+    商务秘书: "business_secretary",
+};
+function normalizeAddressTypeImport(raw) {
+    const s = raw.trim();
+    if (isAddressType(s))
+        return s;
+    return ADDRESS_TYPE_CN_TO_EN[s] ?? null;
+}
 function affiliationServiceTypeOrDefault(v) {
     if (typeof v === "string" && AFFILIATION_SERVICE_TYPES.includes(v)) {
         return v;
     }
     return "地址挂靠";
+}
+function serviceTypeFromAddressType(type) {
+    const map = {
+        affiliation: "地址挂靠",
+        coworking: "集中办公区",
+        business_secretary: "商务秘书",
+    };
+    return map[type];
 }
 function canAccessAffiliationRow(req, row) {
     if (req.session.role === "admin")
@@ -146,25 +175,40 @@ api.get("/address-choices", (_req, res) => {
         .all();
     res.json(rows);
 });
+/** 挂靠申请：按地址类型列出地址库中已有区域（供业务员选择） */
+api.get("/address-regions", (req, res) => {
+    const addressType = req.query.address_type;
+    if (!addressType || !isAddressType(addressType)) {
+        return res.status(400).json({ error: "请提供合法的 address_type" });
+    }
+    res.json({ regions: listRegionsForAddressType(addressType) });
+});
 api.get("/addresses", requireAdmin, (req, res) => {
     const addressType = req.query.address_type;
     const q = req.query.q?.trim();
-    let sql = "SELECT * FROM addresses WHERE 1=1";
+    const occupancy = req.query.occupancy;
+    let sql = `${ADDRESS_ADMIN_SELECT} WHERE 1=1`;
     const params = [];
     if (addressType && isAddressType(addressType)) {
-        sql += " AND address_type = ?";
+        sql += " AND a.address_type = ?";
         params.push(addressType);
     }
     if (q) {
-        sql += " AND (address_region LIKE ? OR detail_address LIKE ?)";
+        sql += " AND (a.address_region LIKE ? OR a.detail_address LIKE ?)";
         const like = `%${q}%`;
         params.push(like, like);
     }
-    sql += " ORDER BY updated_at DESC";
+    if (occupancy === "available") {
+        sql += " AND occ.id IS NULL";
+    }
+    else if (occupancy === "occupied") {
+        sql += " AND occ.id IS NOT NULL";
+    }
+    sql += " ORDER BY a.updated_at DESC";
     res.json(db.prepare(sql).all(...params));
 });
 api.get("/addresses/:id", requireAdmin, (req, res) => {
-    const row = db.prepare("SELECT * FROM addresses WHERE id = ?").get(routeId(req.params.id));
+    const row = getAddressAdminById(routeId(req.params.id));
     if (!row)
         return res.status(404).json({ error: "未找到地址记录" });
     res.json(row);
@@ -178,7 +222,65 @@ api.post("/addresses", requireAdmin, (req, res) => {
     const t = nowIso();
     db.prepare(`INSERT INTO addresses (id, address_type, address_region, detail_address, created_at, updated_at)
      VALUES (?,?,?,?,?,?)`).run(id, b.address_type, String(b.address_region).trim(), String(b.detail_address).trim(), t, t);
-    res.status(201).json(db.prepare("SELECT * FROM addresses WHERE id = ?").get(id));
+    res.status(201).json(getAddressAdminById(id));
+});
+const ADDRESS_IMPORT_MAX = 500;
+api.post("/addresses/import", requireAdmin, (req, res) => {
+    const raw = req.body?.items;
+    if (!Array.isArray(raw) || raw.length === 0) {
+        return res.status(400).json({ error: "items 须为非空数组" });
+    }
+    if (raw.length > ADDRESS_IMPORT_MAX) {
+        return res.status(400).json({ error: `单次最多导入 ${ADDRESS_IMPORT_MAX} 条` });
+    }
+    const normalized = [];
+    const details = [];
+    for (let i = 0; i < raw.length; i++) {
+        const o = raw[i];
+        const obj = typeof o === "object" && o !== null ? o : null;
+        const typeRaw = obj?.address_type != null ? String(obj.address_type).trim() : "";
+        const region = obj?.address_region != null ? String(obj.address_region).trim() : "";
+        const detail = obj?.detail_address != null ? String(obj.detail_address).trim() : "";
+        const msgs = [];
+        const typeNorm = normalizeAddressTypeImport(typeRaw);
+        if (!typeNorm || !region || !detail) {
+            const parts = [];
+            if (!typeNorm)
+                parts.push("address_type 不合法（须为 affiliation、coworking、business_secretary 或对应中文名称）");
+            if (!region)
+                parts.push("address_region 不能为空");
+            if (!detail)
+                parts.push("detail_address 不能为空");
+            details.push({ row: i + 1, message: `第 ${i + 1} 条：${parts.join("；")}` });
+        }
+        else {
+            normalized.push({ address_type: typeNorm, address_region: region, detail_address: detail });
+        }
+    }
+    if (details.length) {
+        return res.status(400).json({ error: "导入数据存在错误，未写入任何记录", details });
+    }
+    const insertStmt = db.prepare(`INSERT INTO addresses (id, address_type, address_region, detail_address, created_at, updated_at)
+     VALUES (?,?,?,?,?,?)`);
+    const t = nowIso();
+    try {
+        db.exec("BEGIN IMMEDIATE");
+        for (const row of normalized) {
+            insertStmt.run(nanoid(), row.address_type, row.address_region, row.detail_address, t, t);
+        }
+        db.exec("COMMIT");
+    }
+    catch (e) {
+        try {
+            db.exec("ROLLBACK");
+        }
+        catch {
+            /* ignore */
+        }
+        const msg = e instanceof Error ? e.message : "导入失败";
+        return res.status(500).json({ error: msg });
+    }
+    res.status(201).json({ inserted: normalized.length });
 });
 api.patch("/addresses/:id", requireAdmin, (req, res) => {
     const cur = db.prepare("SELECT * FROM addresses WHERE id = ?").get(routeId(req.params.id));
@@ -203,10 +305,17 @@ api.patch("/addresses/:id", requireAdmin, (req, res) => {
     vals.push(nowIso());
     vals.push(routeId(req.params.id));
     db.prepare(`UPDATE addresses SET ${fields.join(", ")} WHERE id = ?`).run(...vals);
-    res.json(db.prepare("SELECT * FROM addresses WHERE id = ?").get(routeId(req.params.id)));
+    res.json(getAddressAdminById(routeId(req.params.id)));
 });
 api.delete("/addresses/:id", requireAdmin, (req, res) => {
-    const r = db.prepare("DELETE FROM addresses WHERE id = ?").run(routeId(req.params.id));
+    const id = routeId(req.params.id);
+    const exists = db.prepare("SELECT id FROM addresses WHERE id = ?").get(id);
+    if (!exists)
+        return res.status(404).json({ error: "未找到地址记录" });
+    if (isAddressOccupied(id)) {
+        return res.status(400).json({ error: "该地址已被领取占用，无法删除。请先在挂靠流程中处理关联的已通过申请。" });
+    }
+    const r = db.prepare("DELETE FROM addresses WHERE id = ?").run(id);
     if (Number(r.changes) === 0)
         return res.status(404).json({ error: "未找到地址记录" });
     res.status(204).send();
@@ -386,23 +495,28 @@ api.get("/uploads/:filename", (req, res) => {
 api.get("/affiliations", (req, res) => {
     const isAdmin = req.session.role === "admin";
     const uid = req.session.userId;
-    const sqlBase = `SELECT r.*, a.address_type, a.address_region, a.detail_address
-       FROM affiliation_requests r
-       JOIN addresses a ON a.id = r.address_id`;
     const order = ` ORDER BY r.updated_at DESC`;
     const rows = isAdmin
-        ? db.prepare(sqlBase + order).all()
-        : db.prepare(`${sqlBase} WHERE r.created_by_user_id = ?${order}`).all(uid);
+        ? db.prepare(`${AFFILIATION_ROW_SELECT}${order}`).all()
+        : db.prepare(`${AFFILIATION_ROW_SELECT} WHERE r.created_by_user_id = ?${order}`).all(uid);
     res.json(rows);
 });
 api.post("/affiliations", (req, res) => {
     const b = req.body;
-    if (!b?.address_id || !String(b.applicant_name ?? "").trim()) {
-        return res.status(400).json({ error: "address_id、申请人为必填" });
+    const applicant = String(b?.applicant_name ?? "").trim();
+    if (!applicant) {
+        return res.status(400).json({ error: "申请人为必填" });
     }
-    const addr = db.prepare("SELECT id FROM addresses WHERE id = ?").get(String(b.address_id));
-    if (!addr)
-        return res.status(400).json({ error: "关联的地址不存在" });
+    if (!isAddressType(b?.requested_address_type)) {
+        return res.status(400).json({ error: "请选择合法的地址类型" });
+    }
+    const requestedRegion = String(b?.requested_address_region ?? "").trim();
+    if (!requestedRegion) {
+        return res.status(400).json({ error: "请选择地址区域" });
+    }
+    if (!isRegionValidForAddressType(b.requested_address_type, requestedRegion)) {
+        return res.status(400).json({ error: "该区域在当前地址类型下不存在，请联系管理员在地址库中维护" });
+    }
     const status = b.status === "pending" ? "pending" : "draft";
     const material = materialFromBody(b);
     if (status === "pending") {
@@ -414,13 +528,15 @@ api.post("/affiliations", (req, res) => {
     const t = nowIso();
     const submittedAt = status === "pending" ? t : null;
     const applicantDept = b.applicant_dept != null && String(b.applicant_dept).trim() !== "" ? String(b.applicant_dept).trim() : "";
-    const serviceType = affiliationServiceTypeOrDefault(b.service_type);
+    const reqType = b.requested_address_type;
+    const serviceType = serviceTypeFromAddressType(reqType);
     const ownerId = req.session.userId;
     if (!ownerId) {
         return res.status(401).json({ error: "未登录" });
     }
     db.prepare(`INSERT INTO affiliation_requests (
-      id, address_id, applicant_name, applicant_dept, service_type, status, notes,
+      id, address_id, requested_address_type, requested_address_region,
+      applicant_name, applicant_dept, service_type, status, notes, group_name,
       contact_type, need_address_change,
       channel_common_contact_name, channel_common_contact_phone,
       channel_backup_contact_name, channel_backup_contact_phone,
@@ -428,11 +544,8 @@ api.post("/affiliations", (req, res) => {
       enterprise_backup_name, enterprise_backup_phone, license_photo,
       created_by_user_id,
       created_at, updated_at, submitted_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, String(b.address_id), String(b.applicant_name).trim(), applicantDept, serviceType, status, b.notes != null && b.notes !== "" ? String(b.notes) : null, material.contact_type, material.need_address_change, material.channel_common_contact_name, material.channel_common_contact_phone, material.channel_backup_contact_name, material.channel_backup_contact_phone, material.legal_id_front, material.legal_id_back, material.legal_name, material.legal_phone, material.legal_contact_address, material.legal_email, material.enterprise_backup_name, material.enterprise_backup_phone, material.license_photo, ownerId, t, t, submittedAt);
-    const row = db
-        .prepare(`SELECT r.*, a.address_type, a.address_region, a.detail_address
-       FROM affiliation_requests r JOIN addresses a ON a.id = r.address_id WHERE r.id = ?`)
-        .get(id);
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, null, reqType, requestedRegion, applicant, applicantDept, serviceType, status, b.notes != null && b.notes !== "" ? String(b.notes) : null, b.group_name != null && String(b.group_name).trim() !== "" ? String(b.group_name).trim() : null, material.contact_type, material.need_address_change, material.channel_common_contact_name, material.channel_common_contact_phone, material.channel_backup_contact_name, material.channel_backup_contact_phone, material.legal_id_front, material.legal_id_back, material.legal_name, material.legal_phone, material.legal_contact_address, material.legal_email, material.enterprise_backup_name, material.enterprise_backup_phone, material.license_photo, ownerId, t, t, submittedAt);
+    const row = db.prepare(`${AFFILIATION_ROW_SELECT} WHERE r.id = ?`).get(id);
     res.status(201).json(row);
 });
 api.patch("/affiliations/:id", (req, res) => {
@@ -451,12 +564,9 @@ api.patch("/affiliations/:id", (req, res) => {
     const b = req.body;
     const t = nowIso();
     const applyDraftBodyUpdates = () => {
-        const { fields, vals } = collectAffiliationDraftUpdates(b);
-        if (b.address_id !== undefined) {
-            const addr = db.prepare("SELECT id FROM addresses WHERE id = ?").get(String(b.address_id));
-            if (!addr)
-                return "关联的地址不存在";
-        }
+        const { fields, vals, error } = collectAffiliationDraftUpdates(b);
+        if (error)
+            return error;
         if (fields.length) {
             fields.push("updated_at = ?");
             vals.push(t);
@@ -465,11 +575,22 @@ api.patch("/affiliations/:id", (req, res) => {
         }
         return null;
     };
+    const assertRequestedRegion = (row) => {
+        if (!isAddressType(row.requested_address_type))
+            return "地址类型无效";
+        if (!isRegionValidForAddressType(row.requested_address_type, row.requested_address_region)) {
+            return "地址区域在当前类型下不可用，请重新选择或联系管理员维护地址库";
+        }
+        return null;
+    };
     if (b.action === "submit" && cur.status === "draft") {
         const upErr = applyDraftBodyUpdates();
         if (upErr)
             return res.status(400).json({ error: upErr });
         const full = db.prepare("SELECT * FROM affiliation_requests WHERE id = ?").get(id);
+        const regionErr = assertRequestedRegion(full);
+        if (regionErr)
+            return res.status(400).json({ error: regionErr });
         const err = validateAffiliationMaterial(full);
         if (err)
             return res.status(400).json({ error: err });
@@ -483,11 +604,14 @@ api.patch("/affiliations/:id", (req, res) => {
         if (upErr)
             return res.status(400).json({ error: upErr });
         const full = db.prepare("SELECT * FROM affiliation_requests WHERE id = ?").get(id);
+        const regionErr = assertRequestedRegion(full);
+        if (regionErr)
+            return res.status(400).json({ error: regionErr });
         const vErr = validateAffiliationMaterial(full);
         if (vErr)
             return res.status(400).json({ error: vErr });
         db.prepare(`UPDATE affiliation_requests SET status = 'pending', submitted_at = ?, updated_at = ?,
-       reviewer_name = NULL, review_comment = NULL, reviewed_at = NULL WHERE id = ?`).run(t, t, id);
+       address_id = NULL, reviewer_name = NULL, review_comment = NULL, reviewed_at = NULL WHERE id = ?`).run(t, t, id);
     }
     else if (b.action === "approve" || b.action === "reject") {
         if (cur.status !== "pending") {
@@ -495,21 +619,36 @@ api.patch("/affiliations/:id", (req, res) => {
         }
         const st = b.action === "approve" ? "approved" : "rejected";
         const reviewer = req.session.displayName || req.session.username || "管理员";
-        db.prepare(`UPDATE affiliation_requests SET status = ?, reviewer_name = ?, review_comment = ?,
-       reviewed_at = ?, updated_at = ? WHERE id = ?`).run(st, b.reviewer_name ? String(b.reviewer_name) : reviewer, b.review_comment != null ? String(b.review_comment) : null, t, t, id);
+        if (b.action === "approve") {
+            const full = db.prepare("SELECT * FROM affiliation_requests WHERE id = ?").get(id);
+            if (!full)
+                return res.status(404).json({ error: "未找到申请" });
+            const reqType = full.requested_address_type;
+            if (!isAddressType(reqType)) {
+                return res.status(400).json({ error: "申请记录的地址类型无效" });
+            }
+            const assignedId = findAvailableAddressId(reqType, full.requested_address_region);
+            if (!assignedId) {
+                return res.status(400).json({
+                    error: `「${full.requested_address_region}」下暂无可用详细地址，请先在地址库补充该类型/区域资源`,
+                });
+            }
+            db.prepare(`UPDATE affiliation_requests SET status = ?, address_id = ?, reviewer_name = ?, review_comment = ?,
+         reviewed_at = ?, updated_at = ? WHERE id = ?`).run(st, assignedId, b.reviewer_name ? String(b.reviewer_name) : reviewer, b.review_comment != null ? String(b.review_comment) : null, t, t, id);
+        }
+        else {
+            db.prepare(`UPDATE affiliation_requests SET status = ?, reviewer_name = ?, review_comment = ?,
+         reviewed_at = ?, updated_at = ? WHERE id = ?`).run(st, b.reviewer_name ? String(b.reviewer_name) : reviewer, b.review_comment != null ? String(b.review_comment) : null, t, t, id);
+        }
     }
     else {
         const canEdit = cur.status === "draft" || cur.status === "rejected";
         if (!canEdit) {
             return res.status(400).json({ error: "当前状态不可修改" });
         }
-        const { fields, vals } = collectAffiliationDraftUpdates(b);
-        if (b.address_id !== undefined) {
-            const aid = String(b.address_id);
-            const addr = db.prepare("SELECT id FROM addresses WHERE id = ?").get(aid);
-            if (!addr)
-                return res.status(400).json({ error: "关联的地址不存在" });
-        }
+        const { fields, vals, error } = collectAffiliationDraftUpdates(b);
+        if (error)
+            return res.status(400).json({ error });
         if (!fields.length) {
             return res.status(400).json({ error: "请提供要修改的字段" });
         }
@@ -518,27 +657,17 @@ api.patch("/affiliations/:id", (req, res) => {
         vals.push(id);
         db.prepare(`UPDATE affiliation_requests SET ${fields.join(", ")} WHERE id = ?`).run(...vals);
     }
-    const row = db
-        .prepare(`SELECT r.*, a.address_type, a.address_region, a.detail_address
-       FROM affiliation_requests r JOIN addresses a ON a.id = r.address_id WHERE r.id = ?`)
-        .get(id);
+    const row = db.prepare(`${AFFILIATION_ROW_SELECT} WHERE r.id = ?`).get(id);
     res.json(row);
 });
 api.delete("/affiliations/:id", (req, res) => {
     const id = routeId(req.params.id);
-    const cur = db
-        .prepare("SELECT status, created_by_user_id FROM affiliation_requests WHERE id = ?")
-        .get(id);
+    if (req.session.role !== "admin") {
+        return res.status(403).json({ error: "仅管理员可删除挂靠申请" });
+    }
+    const cur = db.prepare("SELECT id FROM affiliation_requests WHERE id = ?").get(id);
     if (!cur)
         return res.status(404).json({ error: "未找到申请" });
-    if (req.session.role !== "admin") {
-        if (!(req.session.role === "sales" && cur.status === "draft")) {
-            return res.status(403).json({ error: "业务员仅可删除草稿；删除其他记录需管理员" });
-        }
-        if (cur.created_by_user_id !== req.session.userId) {
-            return res.status(403).json({ error: "无权删除该申请" });
-        }
-    }
     const r = db.prepare("DELETE FROM affiliation_requests WHERE id = ?").run(id);
     if (Number(r.changes) === 0)
         return res.status(404).json({ error: "未找到申请" });

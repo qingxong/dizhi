@@ -98,6 +98,112 @@ db.exec(`
     add("enterprise_backup_phone", "TEXT");
     add("license_photo", "TEXT");
     add("created_by_user_id", "TEXT");
+    add("requested_address_type", "TEXT");
+    add("requested_address_region", "TEXT");
+    add("group_name", "TEXT");
+}
+/** 挂靠申请：业务员只填类型/区域，审批后分配 address_id；将 address_id 改为可空 */
+{
+    const cols = db.prepare("PRAGMA table_info(affiliation_requests)").all();
+    const hasRequested = cols.some((c) => c.name === "requested_address_type");
+    const addrCol = cols.find((c) => c.name === "address_id");
+    const addrNotNull = addrCol?.notnull === 1;
+    if (hasRequested) {
+        db.exec(`
+      UPDATE affiliation_requests SET
+        requested_address_type = COALESCE(
+          requested_address_type,
+          (SELECT address_type FROM addresses WHERE addresses.id = affiliation_requests.address_id)
+        ),
+        requested_address_region = COALESCE(
+          NULLIF(TRIM(requested_address_region), ''),
+          (SELECT address_region FROM addresses WHERE addresses.id = affiliation_requests.address_id)
+        )
+      WHERE requested_address_type IS NULL
+         OR requested_address_region IS NULL
+         OR TRIM(requested_address_region) = ''
+    `);
+        db.exec(`
+      UPDATE affiliation_requests SET address_id = NULL
+      WHERE status IN ('draft', 'pending', 'rejected') AND address_id IS NOT NULL
+    `);
+    }
+    if (!hasRequested || addrNotNull) {
+        db.exec(`
+      CREATE TABLE IF NOT EXISTS affiliation_requests_mig (
+        id TEXT PRIMARY KEY,
+        address_id TEXT REFERENCES addresses(id) ON DELETE SET NULL,
+        requested_address_type TEXT NOT NULL DEFAULT 'affiliation',
+        requested_address_region TEXT NOT NULL DEFAULT '',
+        applicant_name TEXT NOT NULL,
+        applicant_dept TEXT NOT NULL DEFAULT '',
+        service_type TEXT NOT NULL DEFAULT '地址挂靠',
+        status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'approved', 'rejected')),
+        notes TEXT,
+        reviewer_name TEXT,
+        review_comment TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        submitted_at TEXT,
+        reviewed_at TEXT,
+        contact_type TEXT NOT NULL DEFAULT 'direct' CHECK (contact_type IN ('channel', 'direct')),
+        need_address_change INTEGER NOT NULL DEFAULT 0,
+        channel_common_contact_name TEXT,
+        channel_common_contact_phone TEXT,
+        channel_backup_contact_name TEXT,
+        channel_backup_contact_phone TEXT,
+        legal_id_front TEXT,
+        legal_id_back TEXT,
+        legal_name TEXT,
+        legal_phone TEXT,
+        legal_contact_address TEXT,
+        legal_email TEXT,
+        enterprise_backup_name TEXT,
+        enterprise_backup_phone TEXT,
+        license_photo TEXT,
+        created_by_user_id TEXT
+      )
+    `);
+        db.exec(`
+      INSERT INTO affiliation_requests_mig (
+        id, address_id, requested_address_type, requested_address_region,
+        applicant_name, applicant_dept, service_type, status, notes,
+        reviewer_name, review_comment, created_at, updated_at, submitted_at, reviewed_at,
+        contact_type, need_address_change,
+        channel_common_contact_name, channel_common_contact_phone,
+        channel_backup_contact_name, channel_backup_contact_phone,
+        legal_id_front, legal_id_back, legal_name, legal_phone, legal_contact_address, legal_email,
+        enterprise_backup_name, enterprise_backup_phone, license_photo, created_by_user_id
+      )
+      SELECT
+        r.id,
+        CASE WHEN r.status = 'approved' THEN r.address_id ELSE NULL END,
+        COALESCE(
+          r.requested_address_type,
+          (SELECT address_type FROM addresses a WHERE a.id = r.address_id),
+          'affiliation'
+        ),
+        COALESCE(
+          NULLIF(TRIM(r.requested_address_region), ''),
+          (SELECT address_region FROM addresses a WHERE a.id = r.address_id),
+          ''
+        ),
+        r.applicant_name, r.applicant_dept, r.service_type, r.status, r.notes,
+        r.reviewer_name, r.review_comment, r.created_at, r.updated_at, r.submitted_at, r.reviewed_at,
+        r.contact_type, r.need_address_change,
+        r.channel_common_contact_name, r.channel_common_contact_phone,
+        r.channel_backup_contact_name, r.channel_backup_contact_phone,
+        r.legal_id_front, r.legal_id_back, r.legal_name, r.legal_phone, r.legal_contact_address, r.legal_email,
+        r.enterprise_backup_name, r.enterprise_backup_phone, r.license_photo, r.created_by_user_id
+      FROM affiliation_requests r
+    `);
+        db.exec("DROP TABLE affiliation_requests");
+        db.exec("ALTER TABLE affiliation_requests_mig RENAME TO affiliation_requests");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_affiliation_status ON affiliation_requests(status)");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_affiliation_address ON affiliation_requests(address_id)");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_affiliation_owner ON affiliation_requests(created_by_user_id)");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_affiliation_requested ON affiliation_requests(requested_address_type, requested_address_region)");
+    }
 }
 db.exec("CREATE INDEX IF NOT EXISTS idx_affiliation_owner ON affiliation_requests(created_by_user_id)");
 const userCount = db.prepare("SELECT COUNT(*) AS c FROM users").get().c;
@@ -136,7 +242,8 @@ if (count === 0) {
      VALUES (?,?,?,?,?,?)`).run(a3, "business_secretary", "江苏省苏州市工业园区", "星湖街328号创意产业园商务秘书托管席位", t, t);
     const r1 = "aff_demo_1";
     db.prepare(`INSERT INTO affiliation_requests (
-      id, address_id, applicant_name, applicant_dept, service_type, status, notes,
+      id, address_id, requested_address_type, requested_address_region,
+      applicant_name, applicant_dept, service_type, status, notes,
       contact_type, need_address_change,
       channel_common_contact_name, channel_common_contact_phone,
       channel_backup_contact_name, channel_backup_contact_phone,
@@ -144,5 +251,5 @@ if (count === 0) {
       enterprise_backup_name, enterprise_backup_phone, license_photo,
       created_by_user_id,
       created_at, updated_at, submitted_at, reviewed_at, reviewer_name, review_comment
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(r1, a1, "赵晨", "", "地址挂靠", "pending", "年度续签挂靠服务", "channel", 0, "渠道王", "13800001111", "渠道李", "13800002222", "https://example.com/id-front-demo.jpg", "https://example.com/id-back-demo.jpg", "法人张", "13900003333", "上海市浦东新区张江路1号", "zhang@example.com", "企业备周", "13900004444", null, "user_sales", t, t, t, null, null, null);
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(r1, null, "affiliation", "上海市浦东新区", "赵晨", "", "地址挂靠", "pending", "年度续签挂靠服务", "channel", 0, "渠道王", "13800001111", "渠道李", "13800002222", "https://example.com/id-front-demo.jpg", "https://example.com/id-back-demo.jpg", "法人张", "13900003333", "上海市浦东新区张江路1号", "zhang@example.com", "企业备周", "13900004444", null, "user_sales", t, t, t, null, null, null);
 }
