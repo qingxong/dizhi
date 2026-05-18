@@ -1,25 +1,53 @@
-import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
-import type { Address, AddressType } from "../types";
+import type { Address, AddressOccupancyStatus, AddressType } from "../types";
 import { ADDRESS_TYPE_LABELS } from "../types";
+import AddressImportModal from "./AddressImportModal.tsx";
+
+const occupancyStyle: Record<AddressOccupancyStatus, string> = {
+  available: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  occupied: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+};
+
+const occupancyLabel: Record<AddressOccupancyStatus, string> = {
+  available: "可领取",
+  occupied: "已领取",
+};
+
+function formatReviewedAt(iso: string | null) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  } catch {
+    return iso;
+  }
+}
 
 export default function AddressesPage() {
   const [list, setList] = useState<Address[]>([]);
   const [filterType, setFilterType] = useState<string>("");
+  const [filterOccupancy, setFilterOccupancy] = useState<"" | "available" | "occupied">("");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<Address | "new" | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     api.addresses
-      .list({ address_type: filterType || undefined, q: q || undefined })
+      .list({
+        address_type: filterType || undefined,
+        q: q || undefined,
+        occupancy: filterOccupancy || undefined,
+      })
       .then(setList)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [filterType, q]);
+  }, [filterType, filterOccupancy, q]);
 
   useEffect(() => {
     load();
@@ -31,16 +59,25 @@ export default function AddressesPage() {
         <div>
           <h2 className="text-xl font-semibold text-white">地址库</h2>
           <p className="text-slate-400 text-sm mt-1">
-            维护可用地址资源：地址类型、区域与详细地址。仅管理员可访问本模块。
+            维护地址资源；占用状态与挂靠「已通过」分配一致。已通过并占用显示为「已领取」。
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setModal("new")}
-          className="rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 shrink-0"
-        >
-          新建地址
-        </button>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="rounded-lg border border-slate-600 hover:bg-slate-800 text-slate-200 text-sm font-medium px-4 py-2"
+          >
+            批量导入
+          </button>
+          <button
+            type="button"
+            onClick={() => setModal("new")}
+            className="rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2"
+          >
+            新建地址
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">
@@ -60,6 +97,15 @@ export default function AddressesPage() {
           <option value="coworking">{ADDRESS_TYPE_LABELS.coworking}</option>
           <option value="business_secretary">{ADDRESS_TYPE_LABELS.business_secretary}</option>
         </select>
+        <select
+          value={filterOccupancy}
+          onChange={(e) => setFilterOccupancy(e.target.value as "" | "available" | "occupied")}
+          className="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-200"
+        >
+          <option value="">全部占用状态</option>
+          <option value="available">可领取</option>
+          <option value="occupied">已领取</option>
+        </select>
         <button
           type="button"
           onClick={load}
@@ -73,25 +119,26 @@ export default function AddressesPage() {
 
       <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900/20">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+          <table className="w-full text-sm text-left min-w-[720px]">
             <thead className="bg-slate-900/80 text-slate-400 text-xs uppercase">
               <tr>
                 <th className="px-4 py-3 font-medium">地址类型</th>
                 <th className="px-4 py-3 font-medium">地址区域</th>
                 <th className="px-4 py-3 font-medium">详细地址</th>
+                <th className="px-4 py-3 font-medium min-w-[150px]">占用状态</th>
                 <th className="px-4 py-3 font-medium w-36">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                     加载中…
                   </td>
                 </tr>
               ) : list.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                     暂无数据
                   </td>
                 </tr>
@@ -106,6 +153,28 @@ export default function AddressesPage() {
                     <td className="px-4 py-3 text-white font-medium">{row.address_region}</td>
                     <td className="px-4 py-3 text-slate-400 max-w-md">{row.detail_address}</td>
                     <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${occupancyStyle[row.occupancy_status]}`}
+                      >
+                        {occupancyLabel[row.occupancy_status]}
+                      </span>
+                      {row.occupancy_status === "occupied" && row.occupied_affiliation_id && (
+                        <div className="mt-1.5 text-xs text-slate-500 space-y-0.5">
+                          <div>
+                            申请人 <span className="text-slate-300">{row.occupied_applicant_name || "—"}</span>
+                          </div>
+                          <Link
+                            to="/affiliations"
+                            className="text-sky-400 hover:text-sky-300 hover:underline"
+                            title={row.occupied_affiliation_id}
+                          >
+                            查看挂靠申请
+                            {row.occupied_reviewed_at ? ` · ${formatReviewedAt(row.occupied_reviewed_at)}` : ""}
+                          </Link>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <button
                         type="button"
                         onClick={() => setModal(row)}
@@ -115,12 +184,18 @@ export default function AddressesPage() {
                       </button>
                       <button
                         type="button"
+                        disabled={row.occupancy_status === "occupied"}
+                        title={row.occupancy_status === "occupied" ? "已领取占用，请先在挂靠流程处理关联申请" : undefined}
                         onClick={async () => {
-                          if (!confirm("确定删除该地址？关联的挂靠申请将一并删除。")) return;
-                          await api.addresses.remove(row.id);
-                          load();
+                          if (!confirm("确定删除该地址？")) return;
+                          try {
+                            await api.addresses.remove(row.id);
+                            load();
+                          } catch (e) {
+                            setError((e as Error).message);
+                          }
                         }}
-                        className="text-red-400/90 hover:text-red-300"
+                        className="text-red-400/90 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         删除
                       </button>
@@ -133,6 +208,15 @@ export default function AddressesPage() {
         </div>
       </div>
 
+      {importOpen && (
+        <AddressImportModal
+          onClose={() => setImportOpen(false)}
+          onDone={() => {
+            setImportOpen(false);
+            load();
+          }}
+        />
+      )}
       {modal && (
         <AddressModal
           initial={modal === "new" ? null : modal}
@@ -197,6 +281,20 @@ function AddressModal({
         </div>
         <form onSubmit={submit} className="p-5 space-y-3">
           {msg && <p className="text-sm text-red-400">{msg}</p>}
+          {initial && initial.occupancy_status === "occupied" && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90 space-y-1">
+              <div>当前状态：已领取</div>
+              {initial.occupied_applicant_name && (
+                <div>
+                  关联申请：{initial.occupied_applicant_name}
+                  {initial.occupied_reviewed_at ? `（${formatReviewedAt(initial.occupied_reviewed_at)}）` : ""}
+                </div>
+              )}
+              <Link to="/affiliations" className="text-sky-400 hover:underline">
+                在挂靠流程中查看
+              </Link>
+            </div>
+          )}
           <label className="block text-xs text-slate-500">地址类型 *</label>
           <select
             value={form.address_type}

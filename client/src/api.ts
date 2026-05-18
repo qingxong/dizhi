@@ -42,10 +42,11 @@ export const api = {
       }),
   },
   addresses: {
-    list: (params?: { address_type?: string; q?: string }) => {
+    list: (params?: { address_type?: string; q?: string; occupancy?: "available" | "occupied" }) => {
       const sp = new URLSearchParams();
       if (params?.address_type) sp.set("address_type", params.address_type);
       if (params?.q) sp.set("q", params.q);
+      if (params?.occupancy) sp.set("occupancy", params.occupancy);
       const q = sp.toString();
       return fetch(`/api/addresses${q ? `?${q}` : ""}`, cred).then((r) => parseJson<Address[]>(r));
     },
@@ -68,9 +69,38 @@ export const api = {
       fetch(`/api/addresses/${id}`, { ...cred, method: "DELETE" }).then((r) => {
         if (!resOk(r)) throw new Error("删除失败");
       }),
+    importBatch: (items: { address_type: string; address_region: string; detail_address: string }[]) =>
+      fetch("/api/addresses/import", {
+        ...cred,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      }).then(async (r) => {
+        if (!r.ok) {
+          let msg = r.statusText;
+          let details: { row: number; message: string }[] | undefined;
+          try {
+            const j = (await r.json()) as { error?: string; details?: { row: number; message: string }[] };
+            if (j.error) msg = j.error;
+            if (Array.isArray(j.details)) details = j.details;
+          } catch {
+            /* ignore */
+          }
+          const e = new Error(msg) as Error & { details?: { row: number; message: string }[] };
+          if (details) e.details = details;
+          throw e;
+        }
+        return r.json() as Promise<{ inserted: number }>;
+      }),
   },
   addressChoices: {
     list: () => fetch("/api/address-choices", cred).then((r) => parseJson<AddressChoice[]>(r)),
+  },
+  addressRegions: {
+    list: (address_type: string) =>
+      fetch(`/api/address-regions?address_type=${encodeURIComponent(address_type)}`, cred).then((r) =>
+        parseJson<{ regions: string[] }>(r),
+      ),
   },
   affiliations: {
     list: () => fetch("/api/affiliations", cred).then((r) => parseJson<AffiliationRequest[]>(r)),

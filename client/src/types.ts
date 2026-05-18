@@ -24,14 +24,7 @@ export const ADDRESS_TYPE_LABELS: Record<AddressType, string> = {
   business_secretary: "商务秘书",
 };
 
-/** 挂靠申请「服务类型」下拉选项（与地址类型中文名称一致） */
-export const AFFILIATION_SERVICE_TYPES = [
-  ADDRESS_TYPE_LABELS.affiliation,
-  ADDRESS_TYPE_LABELS.coworking,
-  ADDRESS_TYPE_LABELS.business_secretary,
-] as const;
-
-export type AffiliationServiceTypeLabel = (typeof AFFILIATION_SERVICE_TYPES)[number];
+export type AddressOccupancyStatus = "available" | "occupied";
 
 export interface Address {
   id: string;
@@ -40,6 +33,11 @@ export interface Address {
   detail_address: string;
   created_at: string;
   updated_at: string;
+  /** 可领取：无已通过挂靠占用；已领取：已分配给某条已通过申请 */
+  occupancy_status: AddressOccupancyStatus;
+  occupied_affiliation_id: string | null;
+  occupied_applicant_name: string | null;
+  occupied_reviewed_at: string | null;
 }
 
 /** 挂靠建单等场景下的地址选项（与 Address 字段一致，只读） */
@@ -51,25 +49,35 @@ export type AffiliationContactType = "channel" | "direct";
 
 export interface AffiliationRequest {
   id: string;
-  address_id: string;
+  /** 审批通过后由系统分配；申请阶段为空 */
+  address_id: string | null;
+  /** 业务员申请时选择的地址类型 */
+  requested_address_type: AddressType;
+  /** 业务员申请时选择的地址区域 */
+  requested_address_region: string;
   applicant_name: string;
   /** 已废弃展示；新申请存空字符串，历史数据可能仍有值 */
   applicant_dept: string;
+  /** 与地址类型对应的中文名（库内字段，界面不再单独展示） */
   service_type: string;
   status: AffiliationStatus;
   notes: string | null;
+  /** 服务群群名称 */
+  group_name: string | null;
   reviewer_name: string | null;
   review_comment: string | null;
   created_at: string;
   updated_at: string;
   submitted_at: string | null;
   reviewed_at: string | null;
+  /** 展示用：未分配时与 requested 一致；已分配时来自地址库 */
   address_type: AddressType;
   address_region: string;
-  detail_address: string;
+  /** 审批通过并分配后才有；否则为 null */
+  detail_address: string | null;
   /** 联络人类型：渠道 / 直客 */
   contact_type: AffiliationContactType;
-  /** 是否办理地址变更（需执照照片） */
+  /** 是否用于办理地址变更（选「是」时需执照照片） */
   need_address_change: number;
   channel_common_contact_name: string | null;
   channel_common_contact_phone: string | null;

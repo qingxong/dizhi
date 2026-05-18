@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { api } from "../api";
-import type { AddressChoice, AffiliationContactType, AffiliationRequest } from "../types";
-import { ADDRESS_TYPE_LABELS, AFFILIATION_SERVICE_TYPES } from "../types";
+import type { AffiliationContactType, AffiliationRequest, AddressType } from "../types";
+import { ADDRESS_TYPE_LABELS } from "../types";
 
 const statusStyle: Record<string, string> = {
   draft: "bg-slate-600/30 text-slate-300",
@@ -25,21 +25,6 @@ const contactLabel: Record<AffiliationContactType, string> = {
 };
 
 type AffiliationStatusFilter = "all" | "draft" | "pending" | "approved" | "rejected";
-
-/** 服务类型与地址库「地址类型」一致，由当前选中的关联地址推导 */
-function serviceTypeSyncedWithAddress(
-  addressId: string,
-  choices: AddressChoice[],
-  /** 编辑弹窗传入：所选地址不在列表时用当前行上的地址类型兜底 */
-  fallbackRow?: AffiliationRequest,
-): string {
-  const found = choices.find((a) => a.id === addressId);
-  if (found) return ADDRESS_TYPE_LABELS[found.address_type];
-  if (fallbackRow && addressId === fallbackRow.address_id) {
-    return ADDRESS_TYPE_LABELS[fallbackRow.address_type];
-  }
-  return AFFILIATION_SERVICE_TYPES[0];
-}
 
 type MaterialFormState = {
   contact_type: AffiliationContactType;
@@ -122,6 +107,143 @@ function materialToApiBody(m: MaterialFormState): Record<string, unknown> {
 
 function inputCls() {
   return "w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white placeholder:text-slate-600";
+}
+
+/** 列表「地址需求」：完整展示详细地址，支持一键复制 */
+function AffiliationListAddressCell({
+  addressType,
+  addressRegion,
+  detailAddress,
+}: {
+  addressType: AddressType;
+  addressRegion: string;
+  detailAddress: string | null;
+}) {
+  const pending = !detailAddress?.trim();
+  const [copied, setCopied] = useState<"none" | "detail" | "full">("none");
+
+  const fullText = pending
+    ? `${ADDRESS_TYPE_LABELS[addressType]}\n${addressRegion}\n（详细地址待分配）`
+    : `${ADDRESS_TYPE_LABELS[addressType]}\n${addressRegion}\n${detailAddress}`;
+
+  async function copy(which: "detail" | "full") {
+    const text = which === "full" ? fullText : (detailAddress ?? "").trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
+      window.setTimeout(() => setCopied("none"), 2000);
+    } catch {
+      /* clipboard 不可用时忽略 */
+    }
+  }
+
+  return (
+    <div className="max-w-md min-w-[220px]">
+      <div className="text-xs text-violet-300/90 font-medium">{ADDRESS_TYPE_LABELS[addressType]}</div>
+      <div className="text-white font-medium mt-0.5">{addressRegion}</div>
+      <div className="mt-1.5 rounded-md border border-slate-700/80 bg-slate-900/60 px-2.5 py-2 max-h-24 overflow-y-auto">
+        {pending ? (
+          <span className="text-xs text-amber-400/90">详细地址待分配</span>
+        ) : (
+          <p className="text-xs text-slate-300 break-all leading-relaxed whitespace-pre-wrap select-text">
+            {detailAddress}
+          </p>
+        )}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+        {!pending && (
+          <button
+            type="button"
+            className="text-[11px] text-sky-400 hover:text-sky-300"
+            onClick={() => void copy("detail")}
+          >
+            {copied === "detail" ? "已复制" : "复制详细地址"}
+          </button>
+        )}
+        <button
+          type="button"
+          className="text-[11px] text-slate-500 hover:text-slate-300"
+          onClick={() => void copy("full")}
+        >
+          {copied === "full" ? "已复制" : "复制全部信息"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** 业务员申请：选择地址类型与区域（详细地址审批通过后自动分配） */
+function AffiliationAddressPreferenceFields({
+  addressType,
+  addressRegion,
+  onAddressTypeChange,
+  onAddressRegionChange,
+}: {
+  addressType: AddressType;
+  addressRegion: string;
+  onAddressTypeChange: (t: AddressType) => void;
+  onAddressRegionChange: (r: string) => void;
+}) {
+  const [regions, setRegions] = useState<string[]>([]);
+  const [loadingRegions, setLoadingRegions] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingRegions(true);
+    api.addressRegions
+      .list(addressType)
+      .then((res) => {
+        if (!cancelled) setRegions(res.regions);
+      })
+      .catch(() => {
+        if (!cancelled) setRegions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRegions(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [addressType]);
+
+  return (
+    <>
+      <label className="block text-xs text-slate-500">地址类型 *</label>
+      <select
+        required
+        value={addressType}
+        onChange={(e) => {
+          onAddressTypeChange(e.target.value as AddressType);
+          onAddressRegionChange("");
+        }}
+        className={inputCls()}
+      >
+        <option value="affiliation">{ADDRESS_TYPE_LABELS.affiliation}</option>
+        <option value="coworking">{ADDRESS_TYPE_LABELS.coworking}</option>
+        <option value="business_secretary">{ADDRESS_TYPE_LABELS.business_secretary}</option>
+      </select>
+      <label className="block text-xs text-slate-500">地址区域 *</label>
+      <select
+        required
+        value={addressRegion}
+        disabled={loadingRegions || regions.length === 0}
+        onChange={(e) => onAddressRegionChange(e.target.value)}
+        className={inputCls()}
+      >
+        <option value="">{loadingRegions ? "加载区域…" : "请选择区域"}</option>
+        {regions.map((r) => (
+          <option key={r} value={r}>
+            {r}
+          </option>
+        ))}
+      </select>
+      {!loadingRegions && regions.length === 0 && (
+        <p className="text-[11px] text-amber-400/90">该类型下暂无可用区域，请联系管理员在地址库中维护。</p>
+      )}
+      <p className="text-[11px] text-slate-500">详细地址将在审批通过后由系统自动分配，无需手动选择。</p>
+    </>
+  );
 }
 
 /** 挂靠材料图片上传（身份证 / 执照），库中存 `/api/uploads/...` 路径 */
@@ -209,7 +331,7 @@ function MaterialFormBody({
     <div className="space-y-4 border-t border-slate-800 pt-4 mt-1">
       <h4 className="text-sm font-medium text-white">地址领取 · 联络人与材料</h4>
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        法人身份证正反面与（若勾选地址变更）执照照片均须上传图片文件（JPEG / PNG / WebP，单张不超过 8MB）。
+        法人身份证正反面均须上传图片文件（JPEG / PNG / WebP，单张不超过 8MB）。若选择「用于办理地址变更」，还须上传执照照片。
       </p>
       <div>
         <label className="block text-xs text-slate-500 mb-1">联络人类型 *</label>
@@ -325,20 +447,36 @@ function MaterialFormBody({
         </div>
       </div>
       <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 space-y-3">
-        <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={value.need_address_change}
-            onChange={(e) => {
-              const c = e.target.checked;
-              onChange({
-                need_address_change: c,
-                ...(c ? {} : { license_photo: "" }),
-              });
-            }}
-          />
-          用于办理地址变更（需上传执照照片）
-        </label>
+        <div>
+          <span className="block text-xs text-slate-500 mb-1">是否用于办理地址变更 *</span>
+          <div className="flex flex-wrap gap-4 text-sm text-slate-300">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="need_address_change"
+                required
+                checked={value.need_address_change === true}
+                onChange={() => onChange({ need_address_change: true })}
+              />
+              是
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="need_address_change"
+                checked={value.need_address_change === false}
+                onChange={() =>
+                  onChange({
+                    need_address_change: false,
+                    license_photo: "",
+                  })
+                }
+              />
+              否
+            </label>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1.5">选「是」时须上传执照照片。</p>
+        </div>
         {value.need_address_change && (
           <IdPhotoInput
             label="执照照片 *"
@@ -356,12 +494,13 @@ export default function AffiliationsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [rows, setRows] = useState<AffiliationRequest[]>([]);
-  const [addressChoices, setAddressChoices] = useState<AddressChoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [editRow, setEditRow] = useState<AffiliationRequest | null>(null);
   const [viewRow, setViewRow] = useState<AffiliationRequest | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AffiliationRequest | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<AffiliationStatusFilter>("all");
 
@@ -376,9 +515,12 @@ export default function AffiliationsPage() {
       const ct: AffiliationContactType = r.contact_type === "channel" ? "channel" : "direct";
       const blob = [
         r.applicant_name,
+        r.legal_name,
+        r.legal_phone,
+        r.group_name,
+        r.requested_address_region,
         r.address_region,
         r.detail_address,
-        r.service_type,
         r.notes,
         r.reviewer_name,
         r.review_comment,
@@ -395,10 +537,10 @@ export default function AffiliationsPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([api.affiliations.list(), api.addressChoices.list()])
-      .then(([a, b]) => {
+    api.affiliations
+      .list()
+      .then((a) => {
         setRows(a);
-        setAddressChoices(b);
         setErr(null);
       })
       .catch((e: Error) => setErr(e.message))
@@ -415,7 +557,7 @@ export default function AffiliationsPage() {
         <div>
           <h2 className="text-xl font-semibold text-white">地址挂靠流程</h2>
           <p className="text-slate-400 text-sm mt-1">
-            申请需区分渠道/直客并填写材料清单；草稿或已驳回可编辑后提交。已驳回可先「修改」再「重新提交」。
+            申请时选择地址类型与区域，详细地址在审批通过后自动分配；需区分渠道/直客并填写材料。草稿或已驳回可编辑后提交。
             {!isAdmin && <span className="text-slate-500"> 审批通过/驳回仅管理员可操作。</span>}
           </p>
         </div>
@@ -440,7 +582,7 @@ export default function AffiliationsPage() {
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="申请人、地址、说明、状态…"
+            placeholder="法人、电话、群名称、地址、申请人…"
             className={inputCls()}
             autoComplete="off"
           />
@@ -469,9 +611,9 @@ export default function AffiliationsPage() {
           <table className="w-full text-sm text-left min-w-[920px]">
             <thead className="bg-slate-900/80 text-slate-400 text-xs uppercase">
               <tr>
-                <th className="px-4 py-3 font-medium">关联地址</th>
-                <th className="px-4 py-3 font-medium">申请人</th>
-                <th className="px-4 py-3 font-medium">联络</th>
+                <th className="px-4 py-3 font-medium">地址需求</th>
+                <th className="px-4 py-3 font-medium min-w-[140px]">法人 / 联络</th>
+                <th className="px-4 py-3 font-medium">类型</th>
                 <th className="px-4 py-3 font-medium">状态</th>
                 <th className="px-4 py-3 font-medium">时间线</th>
                 <th className="px-4 py-3 font-medium w-64">操作</th>
@@ -499,20 +641,24 @@ export default function AffiliationsPage() {
               ) : (
                 filteredRows.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-800/30">
-                    <td className="px-4 py-3">
-                      <div className="text-xs text-violet-300/90 font-medium">
-                        {ADDRESS_TYPE_LABELS[r.address_type]}
+                    <td className="px-4 py-3 align-top">
+                      <AffiliationListAddressCell
+                        addressType={r.address_type}
+                        addressRegion={r.address_region}
+                        detailAddress={r.detail_address}
+                      />
+                    </td>
+                    <td className="px-4 py-3 align-top text-xs">
+                      <div className="text-slate-200 font-medium">{r.legal_name?.trim() || "—"}</div>
+                      <div className="text-slate-400 mt-0.5 tabular-nums">{r.legal_phone?.trim() || "—"}</div>
+                      <div className="text-slate-500 mt-1 break-all" title={r.group_name ?? undefined}>
+                        群：{r.group_name?.trim() || "—"}
                       </div>
-                      <div className="text-white font-medium mt-0.5">{r.address_region}</div>
-                      <div className="text-slate-500 text-xs mt-0.5 truncate max-w-[280px]" title={r.detail_address}>
-                        {r.detail_address}
+                      <div className="text-slate-600 mt-1.5 pt-1 border-t border-slate-800/80">
+                        申请 {r.applicant_name}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-slate-300">
-                      {r.applicant_name}
-                      <div className="text-xs text-slate-500">{r.service_type}</div>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-400">
+                    <td className="px-4 py-3 text-xs text-slate-400 align-top">
                       <span className="text-slate-300">{contactLabel[r.contact_type === "channel" ? "channel" : "direct"]}</span>
                       <div className="mt-1">
                         <button
@@ -563,17 +709,15 @@ export default function AffiliationsPage() {
                             >
                               提交审批
                             </button>
-                            <button
-                              type="button"
-                              className="text-xs text-red-400 hover:text-red-300"
-                              onClick={async () => {
-                                if (!confirm("删除该草稿？")) return;
-                                await api.affiliations.remove(r.id);
-                                load();
-                              }}
-                            >
-                              删除
-                            </button>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                className="text-xs px-2 py-1 rounded border border-red-900/60 text-red-400 hover:bg-red-950/40"
+                                onClick={() => setDeleteTarget(r)}
+                              >
+                                删除
+                              </button>
+                            )}
                           </>
                         )}
                         {r.status === "pending" && isAdmin && (
@@ -584,11 +728,15 @@ export default function AffiliationsPage() {
                               onClick={async () => {
                                 const c = prompt("审批意见（可留空）", "同意");
                                 if (c === null) return;
-                                await api.affiliations.patch(r.id, {
-                                  action: "approve",
-                                  review_comment: c,
-                                });
-                                load();
+                                try {
+                                  await api.affiliations.patch(r.id, {
+                                    action: "approve",
+                                    review_comment: c,
+                                  });
+                                  load();
+                                } catch (e) {
+                                  setErr((e as Error).message);
+                                }
                               }}
                             >
                               通过
@@ -608,12 +756,31 @@ export default function AffiliationsPage() {
                             >
                               驳回
                             </button>
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-1 rounded border border-red-900/60 text-red-400 hover:bg-red-950/40"
+                              onClick={() => setDeleteTarget(r)}
+                            >
+                              删除
+                            </button>
                           </>
                         )}
                         {r.status === "pending" && !isAdmin && (
                           <span className="text-xs text-slate-500">待管理员审批</span>
                         )}
-                        {r.status === "approved" && (
+                        {r.status === "approved" && isAdmin && (
+                          <div className="flex flex-col gap-1.5 items-start max-w-[260px]">
+                            <span className="text-xs text-slate-600">{r.review_comment || "—"}</span>
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-1 rounded border border-red-900/60 text-red-400 hover:bg-red-950/40"
+                              onClick={() => setDeleteTarget(r)}
+                            >
+                              删除
+                            </button>
+                          </div>
+                        )}
+                        {r.status === "approved" && !isAdmin && (
                           <span className="text-xs text-slate-600">{r.review_comment || "—"}</span>
                         )}
                         {r.status === "rejected" && (
@@ -644,6 +811,15 @@ export default function AffiliationsPage() {
                               >
                                 重新提交
                               </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  className="text-xs px-2 py-1 rounded border border-red-900/60 text-red-400 hover:bg-red-950/40"
+                                  onClick={() => setDeleteTarget(r)}
+                                >
+                                  删除
+                                </button>
+                              )}
                             </div>
                           </div>
                         )}
@@ -659,7 +835,6 @@ export default function AffiliationsPage() {
 
       {showNew && (
         <NewAffiliationModal
-          addressChoices={addressChoices}
           onClose={() => setShowNew(false)}
           onCreated={() => {
             setShowNew(false);
@@ -671,7 +846,6 @@ export default function AffiliationsPage() {
         <EditAffiliationModal
           key={editRow.id}
           row={editRow}
-          addressChoices={addressChoices}
           onClose={() => setEditRow(null)}
           onSaved={() => {
             setEditRow(null);
@@ -680,6 +854,92 @@ export default function AffiliationsPage() {
         />
       )}
       {viewRow && <ViewMaterialModal row={viewRow} onClose={() => setViewRow(null)} />}
+      {deleteTarget && (
+        <DeleteAffiliationConfirmModal
+          row={deleteTarget}
+          busy={deleteBusy}
+          onClose={() => {
+            if (!deleteBusy) setDeleteTarget(null);
+          }}
+          onConfirm={async () => {
+            setDeleteBusy(true);
+            setErr(null);
+            try {
+              await api.affiliations.remove(deleteTarget.id);
+              setDeleteTarget(null);
+              load();
+            } catch (e) {
+              setErr((e as Error).message);
+            } finally {
+              setDeleteBusy(false);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeleteAffiliationConfirmModal({
+  row,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  row: AffiliationRequest;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const st = statusText[row.status] ?? row.status;
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      role="presentation"
+      onClick={busy ? undefined : onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-950 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-aff-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-slate-800">
+          <h3 id="delete-aff-title" className="font-semibold text-white">
+            确认删除挂靠申请
+          </h3>
+        </div>
+        <div className="p-5 space-y-3 text-sm text-slate-300">
+          <p>
+            将永久删除申请人 <span className="text-white font-medium">{row.applicant_name}</span> 的申请（当前状态：
+            <span className="text-slate-200"> {st}</span>
+            ）。删除后不可恢复。
+          </p>
+          <p className="text-xs text-slate-500">
+            {row.address_region}
+            {row.detail_address ? ` · ${row.detail_address}` : " · 详细地址待分配"}
+          </p>
+        </div>
+        <div className="px-5 py-4 border-t border-slate-800 flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void onConfirm()}
+            className="px-4 py-2 text-sm rounded-lg bg-red-700 hover:bg-red-600 text-white disabled:opacity-50"
+          >
+            {busy ? "删除中…" : "确认删除"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -732,6 +992,7 @@ function ViewMaterialModal({ row, onClose }: { row: AffiliationRequest; onClose:
             <h3 className="font-semibold text-white">材料与联络人</h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
               {contactLabel[ct]} · 申请人 {row.applicant_name}
+              {row.group_name ? ` · 群 ${row.group_name}` : ""}
             </p>
           </div>
           <button type="button" onClick={onClose} className="text-slate-500 hover:text-white text-lg leading-none shrink-0">
@@ -739,6 +1000,7 @@ function ViewMaterialModal({ row, onClose }: { row: AffiliationRequest; onClose:
           </button>
         </div>
         <div className="p-5 space-y-4 text-sm">
+          <Field label="群名称" value={row.group_name} />
           {ct === "channel" && (
             <div className="rounded-lg border border-slate-800 p-3 space-y-2">
               <div className="text-xs font-medium text-violet-300/90">渠道</div>
@@ -760,8 +1022,8 @@ function ViewMaterialModal({ row, onClose }: { row: AffiliationRequest; onClose:
             <Field label="企业备用联系人电话" value={row.enterprise_backup_phone} />
           </div>
           <div className="rounded-lg border border-slate-800 p-3 space-y-2">
-            <div className="text-xs font-medium text-slate-400">地址变更</div>
-            <div className="text-slate-300">{row.need_address_change ? "是 · 需提供执照" : "否"}</div>
+            <div className="text-xs font-medium text-slate-400">是否用于办理地址变更</div>
+            <div className="text-slate-300">{row.need_address_change ? "是 · 须提供执照" : "否"}</div>
             {!!row.need_address_change && <IdPhotoReadonly label="执照照片" url={row.license_photo} />}
           </div>
         </div>
@@ -772,36 +1034,41 @@ function ViewMaterialModal({ row, onClose }: { row: AffiliationRequest; onClose:
 
 function EditAffiliationModal({
   row,
-  addressChoices,
   onClose,
   onSaved,
 }: {
   row: AffiliationRequest;
-  addressChoices: AddressChoice[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const isDraft = row.status === "draft";
-  const [addressId, setAddressId] = useState(row.address_id);
+  const [addressType, setAddressType] = useState<AddressType>(
+    row.requested_address_type ?? row.address_type,
+  );
+  const [addressRegion, setAddressRegion] = useState(
+    row.requested_address_region ?? row.address_region ?? "",
+  );
   const [applicantName, setApplicantName] = useState(row.applicant_name);
+  const [groupName, setGroupName] = useState(row.group_name ?? "");
   const [notes, setNotes] = useState(row.notes ?? "");
   const [mat, setMat] = useState<MaterialFormState>(() => rowToMaterial(row));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   const basePayload = () => ({
-    address_id: addressId,
+    requested_address_type: addressType,
+    requested_address_region: addressRegion.trim(),
     applicant_name: applicantName.trim(),
     applicant_dept: "",
-    service_type: serviceTypeSyncedWithAddress(addressId, addressChoices, row),
+    group_name: groupName.trim() || null,
     notes: notes.trim() || null,
     ...materialToApiBody(mat),
   });
 
   async function saveDraft(e: FormEvent) {
     e.preventDefault();
-    if (!addressId) {
-      setMsg("请选择关联地址");
+    if (!addressRegion.trim()) {
+      setMsg("请选择地址区域");
       return;
     }
     setSaving(true);
@@ -817,8 +1084,8 @@ function EditAffiliationModal({
   }
 
   async function saveAndSubmit() {
-    if (!addressId) {
-      setMsg("请选择关联地址");
+    if (!addressRegion.trim()) {
+      setMsg("请选择地址区域");
       return;
     }
     setSaving(true);
@@ -859,34 +1126,21 @@ function EditAffiliationModal({
               {row.review_comment || "—"}
             </div>
           )}
-          <label className="block text-xs text-slate-500">关联地址 *</label>
-          <select
-            required
-            value={addressId}
-            onChange={(e) => setAddressId(e.target.value)}
-            className={inputCls()}
-          >
-            {addressChoices.length === 0 ? (
-              <option value="">无可用地址</option>
-            ) : (
-              addressChoices.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {ADDRESS_TYPE_LABELS[a.address_type]} · {a.address_region} ·{" "}
-                  {a.detail_address.length > 36 ? `${a.detail_address.slice(0, 36)}…` : a.detail_address}
-                </option>
-              ))
-            )}
-          </select>
+          <AffiliationAddressPreferenceFields
+            addressType={addressType}
+            addressRegion={addressRegion}
+            onAddressTypeChange={setAddressType}
+            onAddressRegionChange={setAddressRegion}
+          />
           <label className="block text-xs text-slate-500">申请人 *</label>
           <input required value={applicantName} onChange={(e) => setApplicantName(e.target.value)} className={inputCls()} />
-          <label className="block text-xs text-slate-500">服务类型</label>
-          <div
-            className={`${inputCls()} flex flex-wrap items-center justify-between gap-2 cursor-default`}
-            title="与上方所选关联地址的类型一致"
-          >
-            <span className="text-slate-200">{serviceTypeSyncedWithAddress(addressId, addressChoices, row)}</span>
-            <span className="text-[11px] text-slate-500 shrink-0">随关联地址自动同步</span>
-          </div>
+          <label className="block text-xs text-slate-500">群名称</label>
+          <input
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            className={inputCls()}
+            placeholder="服务群名称，便于后续联络"
+          />
           <label className="block text-xs text-slate-500">说明</label>
           <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls()} />
           <MaterialFormBody value={mat} onChange={(p) => setMat((prev) => ({ ...prev, ...p }))} />
@@ -896,14 +1150,14 @@ function EditAffiliationModal({
             </button>
             <button
               type="submit"
-              disabled={saving || !addressChoices.length}
+              disabled={saving}
               className="px-4 py-2 text-sm rounded-lg bg-slate-600 text-white hover:bg-slate-500 disabled:opacity-50"
             >
               {saving ? "保存中…" : "仅保存"}
             </button>
             <button
               type="button"
-              disabled={saving || !addressChoices.length}
+              disabled={saving}
               onClick={() => void saveAndSubmit()}
               className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
             >
@@ -916,18 +1170,12 @@ function EditAffiliationModal({
   );
 }
 
-function NewAffiliationModal({
-  addressChoices,
-  onClose,
-  onCreated,
-}: {
-  addressChoices: AddressChoice[];
-  onClose: () => void;
-  onCreated: () => void;
-}) {
+function NewAffiliationModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { user } = useAuth();
-  const [addressId, setAddressId] = useState(addressChoices[0]?.id ?? "");
+  const [addressType, setAddressType] = useState<AddressType>("affiliation");
+  const [addressRegion, setAddressRegion] = useState("");
   const [applicantName, setApplicantName] = useState(() => user?.displayName ?? "");
+  const [groupName, setGroupName] = useState("");
   const [notes, setNotes] = useState("");
   const [mat, setMat] = useState<MaterialFormState>(emptyMaterial);
   const [submitNow, setSubmitNow] = useState(false);
@@ -942,18 +1190,19 @@ function NewAffiliationModal({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!addressId) {
-      setMsg("暂无可选地址，请联系管理员在地址库中维护地址资源");
+    if (!addressRegion.trim()) {
+      setMsg("请选择地址区域");
       return;
     }
     setSaving(true);
     setMsg(null);
     try {
       await api.affiliations.create({
-        address_id: addressId,
+        requested_address_type: addressType,
+        requested_address_region: addressRegion.trim(),
         applicant_name: applicantName.trim(),
         applicant_dept: "",
-        service_type: serviceTypeSyncedWithAddress(addressId, addressChoices),
+        group_name: groupName.trim() || undefined,
         notes: notes || undefined,
         status: submitNow ? "pending" : undefined,
         ...materialToApiBody(mat),
@@ -977,24 +1226,12 @@ function NewAffiliationModal({
         </div>
         <form onSubmit={submit} className="p-5 space-y-3">
           {msg && <p className="text-sm text-red-400">{msg}</p>}
-          <label className="block text-xs text-slate-500">关联地址 *</label>
-          <select
-            required
-            value={addressId}
-            onChange={(e) => setAddressId(e.target.value)}
-            className={inputCls()}
-          >
-            {addressChoices.length === 0 ? (
-              <option value="">无可用地址</option>
-            ) : (
-              addressChoices.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {ADDRESS_TYPE_LABELS[a.address_type]} · {a.address_region} ·{" "}
-                  {a.detail_address.length > 36 ? `${a.detail_address.slice(0, 36)}…` : a.detail_address}
-                </option>
-              ))
-            )}
-          </select>
+          <AffiliationAddressPreferenceFields
+            addressType={addressType}
+            addressRegion={addressRegion}
+            onAddressTypeChange={setAddressType}
+            onAddressRegionChange={setAddressRegion}
+          />
           <label className="block text-xs text-slate-500">申请人 *</label>
           <input
             required
@@ -1002,14 +1239,13 @@ function NewAffiliationModal({
             onChange={(e) => setApplicantName(e.target.value)}
             className={inputCls()}
           />
-          <label className="block text-xs text-slate-500">服务类型</label>
-          <div
-            className={`${inputCls()} flex flex-wrap items-center justify-between gap-2 cursor-default`}
-            title="与上方所选关联地址的类型一致"
-          >
-            <span className="text-slate-200">{serviceTypeSyncedWithAddress(addressId, addressChoices)}</span>
-            <span className="text-[11px] text-slate-500 shrink-0">随关联地址自动同步</span>
-          </div>
+          <label className="block text-xs text-slate-500">群名称</label>
+          <input
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            className={inputCls()}
+            placeholder="服务群名称，便于后续联络"
+          />
           <label className="block text-xs text-slate-500">说明</label>
           <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls()} />
           <MaterialFormBody value={mat} onChange={(p) => setMat((prev) => ({ ...prev, ...p }))} />
@@ -1023,7 +1259,7 @@ function NewAffiliationModal({
             </button>
             <button
               type="submit"
-              disabled={saving || !addressChoices.length}
+              disabled={saving}
               className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white disabled:opacity-50"
             >
               {saving ? "提交中…" : "确定"}
