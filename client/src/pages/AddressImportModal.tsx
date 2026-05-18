@@ -22,13 +22,6 @@ export default function AddressImportModal({ onClose, onDone }: { onClose: () =>
     return null;
   }, [excelMatrix, text]);
 
-  const clientInvalidCount = useMemo(() => {
-    if (!parsed?.ok) return 0;
-    return parsed.rows.filter(
-      (r) => !normalizeAddressTypeForClient(r.address_type) || !r.address_region.trim() || !r.detail_address.trim(),
-    ).length;
-  }, [parsed]);
-
   function clearExcel() {
     setExcelMatrix(null);
     setExcelName(null);
