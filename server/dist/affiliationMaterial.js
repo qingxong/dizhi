@@ -3,6 +3,7 @@ import { validateAffiliationMaterialFormats } from "./contactFormat.js";
 export const AFFILIATION_MATERIAL_COLUMNS = [
     "contact_type",
     "need_address_change",
+    "channel_company_name",
     "channel_common_contact_name",
     "channel_common_contact_phone",
     "channel_backup_contact_name",
@@ -36,6 +37,7 @@ export function materialFromBody(b) {
     return {
         contact_type: ct,
         need_address_change: need,
+        channel_company_name: str("channel_company_name"),
         channel_common_contact_name: str("channel_common_contact_name"),
         channel_common_contact_phone: str("channel_common_contact_phone"),
         channel_backup_contact_name: str("channel_backup_contact_name"),
@@ -62,6 +64,8 @@ function nonempty(v) {
 export function validateAffiliationMaterial(row) {
     const ct = row.contact_type === "channel" ? "channel" : "direct";
     if (ct === "channel") {
+        if (!nonempty(row.channel_company_name))
+            return "渠道材料：请填写渠道公司名";
         if (!nonempty(row.channel_common_contact_name))
             return "渠道材料：请填写渠道常用联系人姓名";
         if (!nonempty(row.channel_common_contact_phone))
@@ -111,6 +115,7 @@ export function materialPatchFromBody(b) {
             v === true || v === 1 || v === "1" || v === "true" ? 1 : 0;
     }
     const strCols = [
+        "channel_company_name",
         "channel_common_contact_name",
         "channel_common_contact_phone",
         "channel_backup_contact_name",

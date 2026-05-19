@@ -31,6 +31,7 @@ type AffiliationStatusFilter = "all" | "draft" | "pending" | "approved" | "rejec
 type MaterialFormState = {
   contact_type: AffiliationContactType;
   need_address_change: boolean;
+  channel_company_name: string;
   channel_common_contact_name: string;
   channel_common_contact_phone: string;
   channel_backup_contact_name: string;
@@ -51,6 +52,7 @@ function emptyMaterial(): MaterialFormState {
   return {
     contact_type: "direct",
     need_address_change: false,
+    channel_company_name: "",
     channel_common_contact_name: "",
     channel_common_contact_phone: "",
     channel_backup_contact_name: "",
@@ -73,6 +75,7 @@ function rowToMaterial(r: AffiliationRequest): MaterialFormState {
   return {
     contact_type: ct,
     need_address_change: !!(r.need_address_change ?? 0),
+    channel_company_name: r.channel_company_name ?? "",
     channel_common_contact_name: r.channel_common_contact_name ?? "",
     channel_common_contact_phone: r.channel_common_contact_phone ?? "",
     channel_backup_contact_name: r.channel_backup_contact_name ?? "",
@@ -94,6 +97,7 @@ function materialToApiBody(m: MaterialFormState): Record<string, unknown> {
   return {
     contact_type: m.contact_type,
     need_address_change: m.need_address_change,
+    channel_company_name: m.channel_company_name.trim() || null,
     channel_common_contact_name: m.channel_common_contact_name.trim() || null,
     channel_common_contact_phone: m.channel_common_contact_phone.trim() || null,
     channel_backup_contact_name: m.channel_backup_contact_name.trim() || null,
@@ -386,6 +390,15 @@ function MaterialFormBody({
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 space-y-3">
           <div className="text-xs font-medium text-violet-300/90">渠道材料</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] text-slate-500 mb-1">渠道公司名</label>
+              <input
+                className={inputCls()}
+                value={value.channel_company_name}
+                onChange={(e) => onChange({ channel_company_name: e.target.value })}
+                placeholder="个人渠道可以直接填写名字"
+              />
+            </div>
             <div>
               <label className="block text-[11px] text-slate-500 mb-1">常用联系人姓名 *</label>
               <input
@@ -564,6 +577,7 @@ export default function AffiliationsPage() {
         r.applicant_name,
         r.legal_name,
         r.legal_phone,
+        r.channel_company_name,
         r.group_name,
         r.agreement_enterprise_name,
         r.agreement_amount,
@@ -1093,6 +1107,7 @@ function ViewMaterialModal({ row, onClose }: { row: AffiliationRequest; onClose:
           {ct === "channel" && (
             <div className="rounded-lg border border-slate-800 p-3 space-y-2">
               <div className="text-xs font-medium text-violet-300/90">渠道</div>
+              <Field label="渠道公司名" value={row.channel_company_name} />
               <Field label="常用联系人姓名" value={row.channel_common_contact_name} />
               <Field label="常用联系人电话" value={row.channel_common_contact_phone} />
               <Field label="备用联系人姓名" value={row.channel_backup_contact_name} />

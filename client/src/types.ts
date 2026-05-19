@@ -95,6 +95,7 @@ export interface AffiliationRequest {
   contact_type: AffiliationContactType;
   /** 是否用于办理地址变更（选「是」时需执照照片） */
   need_address_change: number;
+  channel_company_name: string | null;
   channel_common_contact_name: string | null;
   channel_common_contact_phone: string | null;
   channel_backup_contact_name: string | null;

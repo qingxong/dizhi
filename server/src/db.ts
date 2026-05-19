@@ -51,6 +51,7 @@ db.exec(`
     reviewed_at TEXT,
     contact_type TEXT NOT NULL DEFAULT 'direct' CHECK (contact_type IN ('channel', 'direct')),
     need_address_change INTEGER NOT NULL DEFAULT 0,
+    channel_company_name TEXT,
     channel_common_contact_name TEXT,
     channel_common_contact_phone TEXT,
     channel_backup_contact_name TEXT,
@@ -93,6 +94,7 @@ db.exec(`
   };
   add("contact_type", "TEXT NOT NULL DEFAULT 'direct'");
   add("need_address_change", "INTEGER NOT NULL DEFAULT 0");
+  add("channel_company_name", "TEXT");
   add("channel_common_contact_name", "TEXT");
   add("channel_common_contact_phone", "TEXT");
   add("channel_backup_contact_name", "TEXT");

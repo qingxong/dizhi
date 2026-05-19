@@ -7,6 +7,7 @@ export type ContactType = "channel" | "direct";
 export const AFFILIATION_MATERIAL_COLUMNS = [
   "contact_type",
   "need_address_change",
+  "channel_company_name",
   "channel_common_contact_name",
   "channel_common_contact_phone",
   "channel_backup_contact_name",
@@ -43,6 +44,7 @@ export function materialFromBody(b: Record<string, unknown>): Record<Affiliation
   return {
     contact_type: ct,
     need_address_change: need,
+    channel_company_name: str("channel_company_name"),
     channel_common_contact_name: str("channel_common_contact_name"),
     channel_common_contact_phone: str("channel_common_contact_phone"),
     channel_backup_contact_name: str("channel_backup_contact_name"),
@@ -113,6 +115,7 @@ export function materialPatchFromBody(b: Record<string, unknown>): Partial<Recor
       v === true || v === 1 || v === "1" || v === "true" ? 1 : 0;
   }
   const strCols: Exclude<AffiliationMaterialColumn, "contact_type" | "need_address_change">[] = [
+    "channel_company_name",
     "channel_common_contact_name",
     "channel_common_contact_phone",
     "channel_backup_contact_name",

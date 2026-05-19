@@ -612,13 +612,14 @@ api.post("/affiliations", (req, res) => {
         id, address_id, requested_address_type, requested_address_region,
         applicant_name, applicant_dept, service_type, status, notes, group_name,
         contact_type, need_address_change,
+        channel_company_name,
         channel_common_contact_name, channel_common_contact_phone,
         channel_backup_contact_name, channel_backup_contact_phone,
         legal_id_front, legal_id_back, legal_name, legal_id_number, legal_phone, legal_contact_address, legal_email,
         enterprise_backup_name, enterprise_backup_phone, license_photo,
         created_by_user_id,
         created_at, updated_at, submitted_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
       id,
       null,
@@ -632,6 +633,7 @@ api.post("/affiliations", (req, res) => {
       b.group_name != null && String(b.group_name).trim() !== "" ? String(b.group_name).trim() : null,
       material.contact_type,
       material.need_address_change,
+      material.channel_company_name,
       material.channel_common_contact_name,
       material.channel_common_contact_phone,
       material.channel_backup_contact_name,
