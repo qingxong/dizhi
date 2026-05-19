@@ -3,7 +3,7 @@ import multer from "multer";
 import { AGREEMENT_PLACEHOLDERS, AGREEMENT_STATUS_LABELS, } from "./constants.js";
 import { buildAgreementTemplateData, generateAgreementDocument, resolveUnderUploads, saveUploadedTemplate, templateFileInfo, } from "./generate.js";
 import { AGREEMENT_TEMPLATE_FILE } from "./paths.js";
-import { agreementSignedMulter, agreementTemplateMulter, signedPathForAffiliation } from "./upload.js";
+import { agreementSignedMulter, agreementTemplateMulter, safeFileExt, signedPathForAffiliation, } from "./upload.js";
 function routeId(p) {
     if (p == null)
         return "";
@@ -181,13 +181,14 @@ export function registerAgreementRoutes(api, deps) {
         const abs = resolveUnderUploads(rel);
         if (!existsSync(abs))
             return res.status(404).json({ error: "文件不存在" });
-        res.download(abs, "signed-agreement.pdf");
+        const base = rel.split("/").pop() ?? "signed-agreement";
+        res.download(abs, base);
     });
     api.post("/affiliations/:id/agreement/signed", (req, res, next) => {
         agreementSignedMulter.single("file")(req, res, (err) => {
             if (err) {
                 if (err instanceof multer.MulterError) {
-                    return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "PDF 不超过 25MB" : err.message });
+                    return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "文件不超过 25MB" : err.message });
                 }
                 return res.status(400).json({ error: err.message || "上传失败" });
             }
@@ -205,8 +206,9 @@ export function registerAgreementRoutes(api, deps) {
         }
         const f = req.file;
         if (!f)
-            return res.status(400).json({ error: "请选择盖章后的 PDF 协议" });
-        const dest = signedPathForAffiliation(id);
+            return res.status(400).json({ error: "请选择盖章后的协议文件" });
+        const ext = safeFileExt(f.originalname);
+        const dest = signedPathForAffiliation(id, ext);
         try {
             copyFileSync(f.path, dest);
             try {
@@ -219,7 +221,7 @@ export function registerAgreementRoutes(api, deps) {
         catch (e) {
             return res.status(500).json({ error: e.message });
         }
-        const rel = `agreements/signed/${id}.pdf`;
+        const rel = `agreements/signed/${id}${ext}`;
         const t = nowIso();
         db.prepare(`UPDATE affiliation_requests SET agreement_status = 'completed',
          agreement_signed_path = ?, agreement_completed_at = ?, updated_at = ?

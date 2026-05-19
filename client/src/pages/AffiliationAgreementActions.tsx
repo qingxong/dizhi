@@ -41,6 +41,42 @@ function normalizeAgreementStatus(s: string | undefined | null): AgreementStatus
   return "none";
 }
 
+function hasAgreementApplication(row: AffiliationRequest): boolean {
+  return !!(
+    row.agreement_enterprise_name?.trim() ||
+    row.agreement_amount?.trim() ||
+    row.agreement_service_start ||
+    row.agreement_service_end
+  );
+}
+
+function AgreementApplicationSummary({ row }: { row: AffiliationRequest }) {
+  if (!hasAgreementApplication(row)) return null;
+  return (
+    <div className="rounded-md border border-slate-700/80 bg-slate-900/50 px-2 py-1.5 text-[11px] text-slate-400 space-y-0.5 max-w-[240px]">
+      <div>
+        <span className="text-slate-500">企业</span>{" "}
+        <span className="text-slate-200 break-all">{row.agreement_enterprise_name?.trim() || "—"}</span>
+      </div>
+      <div>
+        <span className="text-slate-500">金额</span>{" "}
+        <span className="text-slate-200 tabular-nums">{row.agreement_amount?.trim() || "—"}</span>
+      </div>
+      <div>
+        <span className="text-slate-500">服务</span>{" "}
+        <span className="text-slate-200">
+          {row.agreement_service_start || "—"} ~ {row.agreement_service_end || "—"}
+        </span>
+      </div>
+      {row.agreement_submitted_at && (
+        <div className="text-slate-600 pt-0.5">
+          提交 {new Date(row.agreement_submitted_at).toLocaleString("zh-CN")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AgreementStatusBadge({ row }: { row: AffiliationRequest }) {
   if (row.status !== "approved") return <span className="text-xs text-slate-600">—</span>;
   const st = normalizeAgreementStatus(row.agreement_status);
@@ -63,6 +99,7 @@ export function AffiliationAgreementActions({
   onError: (msg: string) => void;
 }) {
   const [showSubmit, setShowSubmit] = useState(false);
+  const [showReview, setShowReview] = useState(false);
   const [busy, setBusy] = useState(false);
 
   if (row.status !== "approved") {
@@ -88,7 +125,8 @@ export function AffiliationAgreementActions({
     setBusy(true);
     try {
       const res = await api.affiliations.downloadSignedAgreement(row.id);
-      await saveBlobResponse(res, `signed-${row.id.slice(0, 8)}.pdf`);
+      const ext = row.agreement_signed_path?.match(/\.[a-z0-9]+$/i)?.[0] ?? "";
+      await saveBlobResponse(res, `signed-${row.id.slice(0, 8)}${ext}`);
     } catch (e) {
       onError((e as Error).message);
     } finally {
@@ -100,6 +138,7 @@ export function AffiliationAgreementActions({
   <>
       <div className="flex flex-col gap-1.5 items-start">
         <AgreementStatusBadge row={row} />
+        {hasAgreementApplication(row) && <AgreementApplicationSummary row={row} />}
         <div className="flex flex-wrap gap-1">
           {(st === "none" || st === "rejected") && !isAdmin && (
             <button
@@ -116,47 +155,18 @@ export function AffiliationAgreementActions({
               <button
                 type="button"
                 disabled={busy}
-                className="text-xs px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-600"
-                onClick={async () => {
-                  if (!confirm("确认审核通过并生成协议 PDF？")) return;
-                  setBusy(true);
-                  try {
-                    await api.affiliations.reviewAgreement(row.id, {
-                      action: "approve",
-                      review_comment: "已生成协议",
-                    });
-                    onReload();
-                  } catch (e) {
-                    onError((e as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
+                className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600"
+                onClick={() => setShowReview(true)}
               >
-                通过并生成
+                审核详情
               </button>
               <button
                 type="button"
                 disabled={busy}
-                className="text-xs px-2 py-1 rounded bg-red-900/50 hover:bg-red-800/60"
-                onClick={async () => {
-                  const c = prompt("驳回原因", "");
-                  if (c === null) return;
-                  setBusy(true);
-                  try {
-                    await api.affiliations.reviewAgreement(row.id, {
-                      action: "reject",
-                      review_comment: c || "未通过",
-                    });
-                    onReload();
-                  } catch (e) {
-                    onError((e as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
+                className="text-xs px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-600"
+                onClick={() => setShowReview(true)}
               >
-                驳回
+                通过并生成
               </button>
             </>
           )}
@@ -177,7 +187,6 @@ export function AffiliationAgreementActions({
             <label className="text-xs px-2 py-1 rounded bg-blue-600/85 hover:bg-blue-600 text-white cursor-pointer">
               <input
                 type="file"
-                accept="application/pdf,.pdf"
                 className="hidden"
                 disabled={busy}
                 onChange={async (e) => {
@@ -224,7 +233,138 @@ export function AffiliationAgreementActions({
           onError={onError}
         />
       )}
+      {showReview && isAdmin && (
+        <AgreementReviewModal
+          row={row}
+          busy={busy}
+          onClose={() => setShowReview(false)}
+          onReload={onReload}
+          onError={onError}
+          setBusy={setBusy}
+        />
+      )}
     </>
+  );
+}
+
+function AgreementReviewModal({
+  row,
+  busy,
+  onClose,
+  onReload,
+  onError,
+  setBusy,
+}: {
+  row: AffiliationRequest;
+  busy: boolean;
+  onClose: () => void;
+  onReload: () => void;
+  onError: (msg: string) => void;
+  setBusy: (v: boolean) => void;
+}) {
+  const [comment, setComment] = useState("已生成协议");
+
+  async function approve() {
+    if (!confirm("确认审核通过并生成协议文件？")) return;
+    setBusy(true);
+    try {
+      await api.affiliations.reviewAgreement(row.id, {
+        action: "approve",
+        review_comment: comment.trim() || "已生成协议",
+      });
+      onClose();
+      onReload();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reject() {
+    const c = comment.trim() || "未通过";
+    if (!confirm(`确认驳回该协议申请？\n原因：${c}`)) return;
+    setBusy(true);
+    try {
+      await api.affiliations.reviewAgreement(row.id, {
+        action: "reject",
+        review_comment: c,
+      });
+      onClose();
+      onReload();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-950 shadow-2xl">
+        <div className="px-5 py-4 border-b border-slate-800 flex justify-between items-center">
+          <div>
+            <h3 className="font-semibold text-white">审核地址协议</h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              申请人 {row.applicant_name}
+              {row.group_name ? ` · 群 ${row.group_name}` : ""}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-500 hover:text-white text-lg">
+            ×
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="rounded-lg border border-violet-900/40 bg-violet-950/20 p-3 space-y-2 text-sm">
+            <div className="flex gap-2">
+              <span className="text-slate-500 shrink-0 w-20">企业名称</span>
+              <span className="text-white break-all">{row.agreement_enterprise_name?.trim() || "—"}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-slate-500 shrink-0 w-20">金额</span>
+              <span className="text-white tabular-nums">{row.agreement_amount?.trim() || "—"}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-slate-500 shrink-0 w-20">服务开始</span>
+              <span className="text-white">{row.agreement_service_start || "—"}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-slate-500 shrink-0 w-20">服务结束</span>
+              <span className="text-white">{row.agreement_service_end || "—"}</span>
+            </div>
+            {row.agreement_submitted_at && (
+              <div className="flex gap-2 text-xs text-slate-500 pt-1 border-t border-slate-800">
+                <span className="shrink-0 w-20">提交时间</span>
+                <span>{new Date(row.agreement_submitted_at).toLocaleString("zh-CN")}</span>
+              </div>
+            )}
+          </div>
+          <label className="block text-xs text-slate-500">审批意见（通过/驳回均可填写）</label>
+          <input value={comment} onChange={(e) => setComment(e.target.value)} className={inputCls()} />
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-600">
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void reject()}
+              className="px-4 py-2 text-sm rounded-lg bg-red-900/50 text-red-200 hover:bg-red-800/60 disabled:opacity-50"
+            >
+              驳回
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void approve()}
+              className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {busy ? "处理中…" : "通过并生成协议"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

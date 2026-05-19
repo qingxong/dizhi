@@ -1,7 +1,15 @@
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import multer from "multer";
 import { nanoid } from "nanoid";
 import { AGREEMENT_SIGNED_DIR, AGREEMENT_TEMPLATE_DIR } from "./paths.js";
+
+/** 从原始文件名取安全扩展名（无则空字符串） */
+export function safeFileExt(originalname: string): string {
+  const ext = extname(originalname).toLowerCase();
+  if (!ext || ext.length > 12) return "";
+  if (!/^\.[a-z0-9]+$/.test(ext)) return "";
+  return ext;
+}
 
 export const agreementTemplateMulter = multer({
   storage: multer.diskStorage({
@@ -18,22 +26,18 @@ export const agreementTemplateMulter = multer({
   },
 });
 
+/** 回传盖章协议：暂不限制文件格式，单文件最大 25MB */
 export const agreementSignedMulter = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, AGREEMENT_SIGNED_DIR),
     filename: (_req, file, cb) => {
-      const ext = file.mimetype === "application/pdf" || file.originalname.toLowerCase().endsWith(".pdf") ? ".pdf" : "";
-      cb(null, ext ? `${nanoid(20)}${ext}` : `${nanoid(20)}.pdf`);
+      const ext = safeFileExt(file.originalname);
+      cb(null, `${nanoid(20)}${ext}`);
     },
   }),
   limits: { fileSize: 25 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    const ok = file.mimetype === "application/pdf" || file.originalname.toLowerCase().endsWith(".pdf");
-    if (ok) cb(null, true);
-    else cb(new Error("请上传 PDF 格式的盖章协议"));
-  },
 });
 
-export function signedPathForAffiliation(affiliationId: string): string {
-  return join(AGREEMENT_SIGNED_DIR, `${affiliationId}.pdf`);
+export function signedPathForAffiliation(affiliationId: string, ext = ""): string {
+  return join(AGREEMENT_SIGNED_DIR, `${affiliationId}${ext}`);
 }

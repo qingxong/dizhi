@@ -15,7 +15,12 @@ import {
   templateFileInfo,
 } from "./generate.js";
 import { AGREEMENT_TEMPLATE_FILE } from "./paths.js";
-import { agreementSignedMulter, agreementTemplateMulter, signedPathForAffiliation } from "./upload.js";
+import {
+  agreementSignedMulter,
+  agreementTemplateMulter,
+  safeFileExt,
+  signedPathForAffiliation,
+} from "./upload.js";
 
 type SqlParam = string | number | bigint | null;
 
@@ -224,7 +229,8 @@ export function registerAgreementRoutes(
     }
     const abs = resolveUnderUploads(rel);
     if (!existsSync(abs)) return res.status(404).json({ error: "文件不存在" });
-    res.download(abs, "signed-agreement.pdf");
+    const base = rel.split("/").pop() ?? "signed-agreement";
+    res.download(abs, base);
   });
 
   api.post(
@@ -233,7 +239,7 @@ export function registerAgreementRoutes(
       agreementSignedMulter.single("file")(req, res, (err: unknown) => {
         if (err) {
           if (err instanceof multer.MulterError) {
-            return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "PDF 不超过 25MB" : err.message });
+            return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "文件不超过 25MB" : err.message });
           }
           return res.status(400).json({ error: (err as Error).message || "上传失败" });
         }
@@ -249,9 +255,10 @@ export function registerAgreementRoutes(
         return res.status(400).json({ error: "请先生成协议并待客户盖章后再回传" });
       }
       const f = req.file;
-      if (!f) return res.status(400).json({ error: "请选择盖章后的 PDF 协议" });
+      if (!f) return res.status(400).json({ error: "请选择盖章后的协议文件" });
 
-      const dest = signedPathForAffiliation(id);
+      const ext = safeFileExt(f.originalname);
+      const dest = signedPathForAffiliation(id, ext);
       try {
         copyFileSync(f.path, dest);
         try {
@@ -263,7 +270,7 @@ export function registerAgreementRoutes(
         return res.status(500).json({ error: (e as Error).message });
       }
 
-      const rel = `agreements/signed/${id}.pdf`;
+      const rel = `agreements/signed/${id}${ext}`;
       const t = nowIso();
       db.prepare(
         `UPDATE affiliation_requests SET agreement_status = 'completed',

@@ -5,7 +5,7 @@
 | 层级 | 技术 |
 |------|------|
 | 前端 | React 19、Vite 6、TypeScript、Tailwind CSS 4、React Router 7、SheetJS（`xlsx`，地址批量导入） |
-| 后端 | Express 4、TypeScript、`node:sqlite`（SQLite）、express-session、Multer（图片/PDF/模板上传）、docxtemplater（协议 Word 填充） |
+| 后端 | Express 4、TypeScript、`node:sqlite`（SQLite）、express-session、Multer（图片/协议文件/模板上传）、docxtemplater（协议 Word 填充） |
 
 仓库为 **npm workspaces** 单体：`client/` 与 `server/`。
 
@@ -48,8 +48,18 @@
 
 **列表与检索**
 
-- 列展示：地址需求（含详细地址展示与复制）、法人姓名/电话/群名称、渠道直客、挂靠状态、**地址协议**进度、时间线、操作。
-- 关键词搜索（法人、电话、群名称、地址、申请人等）；状态下拉筛选（草稿 / 待审批 / 已通过 / 已驳回）。
+| 列 | 内容 |
+|----|------|
+| 地址需求 | 类型、区域、详细地址（可换行展示、复制详细地址/全部信息） |
+| 企业 / 联络 | **企业名称**（协议申请后填写）、法人姓名、电话、群名称、内部申请人 |
+| 类型 | 渠道 / 直客，查看材料 |
+| 挂靠状态 | 草稿 / 待审批 / 已通过 / 已驳回 |
+| 地址协议 | 协议进度、申请摘要、审核/下载/回传操作 |
+| 时间线 | 创建、提交、审批时间 |
+| 操作 | 编辑、提交、审批、删除等 |
+
+- **关键词搜索**：企业名称、法人、电话、群名称、地址、申请人、协议状态文案等。
+- **状态筛选**：挂靠状态（草稿 / 待审批 / 已通过 / 已驳回）。
 
 库内 `service_type` 与地址类型对应，界面不再单独维护「服务类型」下拉。
 
@@ -60,16 +70,18 @@
 | 步骤 | 角色 | 说明 |
 |------|------|------|
 | 1 | 业务员 | 点击「申请协议」，填写**企业名称、金额、服务开始/结束时间**，提交审核 |
-| 2 | 管理员 | 在「协议模板」页维护 Word（`.docx`）模板；对「协议待审」记录**通过并生成**或驳回 |
+| 2 | 管理员 | 在「协议模板」页维护 Word（`.docx`）模板；在列表或「审核详情」中查看协议要素后**通过并生成**或驳回 |
 | 3 | 业务员 | **下载协议**（PDF 优先，见环境说明）发给客户盖章 |
-| 4 | 业务员 | **回传盖章协议**（PDF） |
+| 4 | 业务员 | **回传盖章协议**（**不限文件格式**，单文件 ≤ 25MB，保留原扩展名） |
 | 5 | — | 状态变为「协议已完成」，流程结束 |
 
 协议状态：`未申请` → `协议待审` → `待回传盖章协议` → `协议已完成`（驳回后可重新申请）。
 
+管理员审核时可在「地址协议」列看到企业/金额/服务期摘要，或通过 **审核详情** 弹窗查看完整信息后再操作。
+
 ### 协议模板（仅管理员）
 
-- 路径：导航 **协议模板**。
+- 导航：**协议模板**。
 - 上传/下载 `.docx` 模板；页面列出全部**占位符**及示例值（如 `{enterprise_name}`、`{amount}`、`{amount_cn}`、`{detail_address}` 等）。
 - 生成逻辑使用 [docxtemplater](https://docxtemplater.com/) 填充模板。
 
@@ -163,11 +175,22 @@ $env:PORT='3890'; $env:API_PORT='3890'; npm run dev
 | `server/data/addresses.db` | SQLite 数据库（首次运行自动建表与迁移；含演示种子数据） |
 | `server/data/uploads/` | 证件图、执照图等上传文件 |
 | `server/data/agreement-template/template.docx` | 管理员上传的协议 Word 模板 |
-| `server/data/uploads/agreements/` | 生成的协议与业务员回传的盖章 PDF |
+| `server/data/uploads/agreements/generated/` | 系统生成的协议（`.pdf` 或 `.docx`） |
+| `server/data/uploads/agreements/signed/` | 业务员回传的盖章协议（按 `{挂靠ID}{扩展名}` 存储） |
 
 上传的证件图通过登录会话访问：`GET /api/uploads/:filename`。
 
-协议文件下载：`GET /api/affiliations/:id/agreement/generated`、`GET /api/affiliations/:id/agreement/signed`。
+协议相关 API（均需登录）：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/agreement-template/placeholders` | 占位符说明与示例 |
+| GET/POST | `/api/agreement-template` | 查询/上传模板（POST 仅管理员） |
+| POST | `/api/affiliations/:id/agreement/submit` | 业务员提交协议申请 |
+| PATCH | `/api/affiliations/:id/agreement/review` | 管理员通过/驳回并生成协议 |
+| GET | `/api/affiliations/:id/agreement/generated` | 下载生成的协议 |
+| POST | `/api/affiliations/:id/agreement/signed` | 回传盖章协议（multipart `file`） |
+| GET | `/api/affiliations/:id/agreement/signed` | 下载已回传文件 |
 
 ---
 
@@ -184,7 +207,7 @@ $env:PORT='3890'; $env:API_PORT='3890'; npm run dev
 | 删除挂靠申请 | ✓ | — |
 | 创建/编辑/提交自己的挂靠 | ✓ | ✓ |
 | 地址协议申请、下载、回传 | ✓ | ✓（本人记录） |
-| 地址协议审核、生成 PDF | ✓ | — |
+| 地址协议审核、生成协议文件 | ✓ | — |
 
 ---
 
@@ -202,7 +225,7 @@ $env:PORT='3890'; $env:API_PORT='3890'; npm run dev
 | `today` | 生成当日日期 |
 | `agreement_no` | 协议编号（申请 ID 简写） |
 
-完整列表与示例值见管理端 **协议模板** 页面或 `GET /api/agreement-template/placeholders`。
+完整列表与示例值见管理端 **协议模板** 页面。
 
 ---
 
@@ -218,6 +241,10 @@ $env:PORT='3890'; $env:API_PORT='3890'; npm run dev
 2. 确认服务器已安装 LibreOffice 且 `soffice` 可用，或配置 `LIBREOFFICE_PATH`。  
 3. 模板占位符须与上表一致（docxtemplater 语法 `{key}`）。
 
+### 列表企业名称为空
+
+企业名称在业务员提交**地址协议**后才有值（字段 `agreement_enterprise_name`）；仅完成地址挂靠、未申请协议时显示「—」。
+
 ### 数据库升级
 
 启动时 `server/src/db.ts` 会对 `affiliation_requests` 等表执行 `ALTER TABLE` 迁移。生产升级前请**备份** `addresses.db`。
@@ -232,16 +259,25 @@ $env:PORT='3890'; $env:API_PORT='3890'; npm run dev
 
 ```
 client/src/
-  pages/          # 各业务页面（挂靠、地址库、协议模板、用户等）
-  api.ts          # 前端 API 封装
-  types.ts        # 共享类型
+  pages/                        # 业务页面
+    AffiliationsPage.tsx        # 挂靠流程列表与表单
+    AffiliationAgreementActions.tsx  # 协议申请/审核/回传
+    AgreementTemplatePage.tsx   # 协议模板（管理员）
+    AddressesPage.tsx           # 地址库
+    UsersPage.tsx               # 用户管理
+  api.ts                        # 前端 API 封装
+  types.ts                      # 共享类型
 server/src/
-  index.ts        # Express 入口、REST、会话
-  db.ts           # SQLite 初始化与迁移
-  affiliationAddress.ts   # 地址分配、占用查询
-  affiliationMaterial.ts  # 材料校验
-  agreement/      # 协议模板、生成、上传路由
+  index.ts                      # Express 入口、REST、会话
+  db.ts                         # SQLite 初始化与迁移
+  affiliationAddress.ts         # 地址分配、占用查询
+  affiliationMaterial.ts        # 材料校验
+  agreement/                    # 协议模板、生成、上传
+    constants.ts                # 占位符与状态定义
+    generate.ts                 # docxtemplater + LibreOffice 转 PDF
+    routes.ts                   # 协议相关 API
+    upload.ts                   # Multer 配置
   idPhotoUpload.ts
 ```
 
-更细的需求与备忘见仓库内 `开发计划`（非构建产物）。
+更细的需求与备忘见仓库内 `开发计划`、`更新计划`（纯文本备忘，非构建产物）。

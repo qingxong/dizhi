@@ -597,7 +597,7 @@ export default function AffiliationsPage() {
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="法人、电话、群名称、地址、申请人…"
+            placeholder="企业名称、法人、电话、群名称、地址、申请人…"
             className={inputCls()}
             autoComplete="off"
           />
@@ -627,7 +627,7 @@ export default function AffiliationsPage() {
             <thead className="bg-slate-900/80 text-slate-400 text-xs uppercase">
               <tr>
                 <th className="px-4 py-3 font-medium">地址需求</th>
-                <th className="px-4 py-3 font-medium min-w-[140px]">法人 / 联络</th>
+                <th className="px-4 py-3 font-medium min-w-[150px]">企业 / 联络</th>
                 <th className="px-4 py-3 font-medium">类型</th>
                 <th className="px-4 py-3 font-medium">挂靠状态</th>
                 <th className="px-4 py-3 font-medium min-w-[120px]">地址协议</th>
@@ -665,7 +665,14 @@ export default function AffiliationsPage() {
                       />
                     </td>
                     <td className="px-4 py-3 align-top text-xs">
-                      <div className="text-slate-200 font-medium">{r.legal_name?.trim() || "—"}</div>
+                      <div
+                        className="text-white font-medium break-all"
+                        title={r.agreement_enterprise_name ?? undefined}
+                      >
+                        {r.agreement_enterprise_name?.trim() || "—"}
+                      </div>
+                      <div className="text-slate-500 text-[11px] mt-0.5">企业名称</div>
+                      <div className="text-slate-300 font-medium mt-2">{r.legal_name?.trim() || "—"}</div>
                       <div className="text-slate-400 mt-0.5 tabular-nums">{r.legal_phone?.trim() || "—"}</div>
                       <div className="text-slate-500 mt-1 break-all" title={r.group_name ?? undefined}>
                         群：{r.group_name?.trim() || "—"}
