@@ -3,7 +3,8 @@ import type { ChangeEvent, FormEvent } from "react";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { api } from "../api";
 import type { AffiliationContactType, AffiliationRequest, AddressType } from "../types";
-import { ADDRESS_TYPE_LABELS } from "../types";
+import { ADDRESS_TYPE_LABELS, AGREEMENT_STATUS_LABELS } from "../types";
+import { AffiliationAgreementActions } from "./AffiliationAgreementActions.tsx";
 
 const statusStyle: Record<string, string> = {
   draft: "bg-slate-600/30 text-slate-300",
@@ -518,6 +519,16 @@ export default function AffiliationsPage() {
         r.legal_name,
         r.legal_phone,
         r.group_name,
+        r.agreement_enterprise_name,
+        r.agreement_amount,
+        AGREEMENT_STATUS_LABELS[
+          (r.agreement_status === "pending" ||
+          r.agreement_status === "pdf_ready" ||
+          r.agreement_status === "completed" ||
+          r.agreement_status === "rejected"
+            ? r.agreement_status
+            : "none") as keyof typeof AGREEMENT_STATUS_LABELS
+        ],
         r.requested_address_region,
         r.address_region,
         r.detail_address,
@@ -557,8 +568,12 @@ export default function AffiliationsPage() {
         <div>
           <h2 className="text-xl font-semibold text-white">地址挂靠流程</h2>
           <p className="text-slate-400 text-sm mt-1">
-            申请时选择地址类型与区域，详细地址在审批通过后自动分配；需区分渠道/直客并填写材料。草稿或已驳回可编辑后提交。
-            {!isAdmin && <span className="text-slate-500"> 审批通过/驳回仅管理员可操作。</span>}
+            申请时选择地址类型与区域，详细地址在审批通过后自动分配；地址通过后可再申请协议（企业名称、金额、服务期），管理员审核后生成 PDF，业务员回传盖章件即完结。
+            {isAdmin ? (
+              <span className="text-slate-500"> 管理员可审批，也可在待审批/已通过等状态下修改资料。</span>
+            ) : (
+              <span className="text-slate-500"> 审批通过/驳回仅管理员可操作。</span>
+            )}
           </p>
         </div>
         <button
@@ -608,13 +623,14 @@ export default function AffiliationsPage() {
 
       <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900/20">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left min-w-[920px]">
+          <table className="w-full text-sm text-left min-w-[1080px]">
             <thead className="bg-slate-900/80 text-slate-400 text-xs uppercase">
               <tr>
                 <th className="px-4 py-3 font-medium">地址需求</th>
                 <th className="px-4 py-3 font-medium min-w-[140px]">法人 / 联络</th>
                 <th className="px-4 py-3 font-medium">类型</th>
-                <th className="px-4 py-3 font-medium">状态</th>
+                <th className="px-4 py-3 font-medium">挂靠状态</th>
+                <th className="px-4 py-3 font-medium min-w-[120px]">地址协议</th>
                 <th className="px-4 py-3 font-medium">时间线</th>
                 <th className="px-4 py-3 font-medium w-64">操作</th>
               </tr>
@@ -622,19 +638,19 @@ export default function AffiliationsPage() {
             <tbody className="divide-y divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     加载中…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     暂无申请
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     无匹配结果，可调整关键词或状态筛选
                   </td>
                 </tr>
@@ -675,7 +691,10 @@ export default function AffiliationsPage() {
                         {statusText[r.status] ?? r.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-500 space-y-0.5">
+                    <td className="px-4 py-3 align-top">
+                      <AffiliationAgreementActions row={r} isAdmin={isAdmin} onReload={load} onError={setErr} />
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500 space-y-0.5 align-top">
                       <div>创建 {formatTime(r.created_at)}</div>
                       {r.submitted_at && <div>提交 {formatTime(r.submitted_at)}</div>}
                       {r.reviewed_at && (
@@ -722,6 +741,13 @@ export default function AffiliationsPage() {
                         )}
                         {r.status === "pending" && isAdmin && (
                           <>
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600"
+                              onClick={() => setEditRow(r)}
+                            >
+                              修改资料
+                            </button>
                             <button
                               type="button"
                               className="text-xs px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-600"
@@ -771,13 +797,22 @@ export default function AffiliationsPage() {
                         {r.status === "approved" && isAdmin && (
                           <div className="flex flex-col gap-1.5 items-start max-w-[260px]">
                             <span className="text-xs text-slate-600">{r.review_comment || "—"}</span>
-                            <button
-                              type="button"
-                              className="text-xs px-2 py-1 rounded border border-red-900/60 text-red-400 hover:bg-red-950/40"
-                              onClick={() => setDeleteTarget(r)}
-                            >
-                              删除
-                            </button>
+                            <div className="flex flex-wrap gap-1">
+                              <button
+                                type="button"
+                                className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600"
+                                onClick={() => setEditRow(r)}
+                              >
+                                修改资料
+                              </button>
+                              <button
+                                type="button"
+                                className="text-xs px-2 py-1 rounded border border-red-900/60 text-red-400 hover:bg-red-950/40"
+                                onClick={() => setDeleteTarget(r)}
+                              >
+                                删除
+                              </button>
+                            </div>
                           </div>
                         )}
                         {r.status === "approved" && !isAdmin && (
@@ -846,6 +881,7 @@ export default function AffiliationsPage() {
         <EditAffiliationModal
           key={editRow.id}
           row={editRow}
+          isAdmin={isAdmin}
           onClose={() => setEditRow(null)}
           onSaved={() => {
             setEditRow(null);
@@ -1034,14 +1070,18 @@ function ViewMaterialModal({ row, onClose }: { row: AffiliationRequest; onClose:
 
 function EditAffiliationModal({
   row,
+  isAdmin,
   onClose,
   onSaved,
 }: {
   row: AffiliationRequest;
+  isAdmin: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const isDraft = row.status === "draft";
+  /** 管理员在待审批/已通过/已驳回时仅保存资料，不改变流程状态 */
+  const adminMaintain = isAdmin && !isDraft;
   const [addressType, setAddressType] = useState<AddressType>(
     row.requested_address_type ?? row.address_type,
   );
@@ -1109,9 +1149,19 @@ function EditAffiliationModal({
       <div className="w-full max-w-xl rounded-xl border border-slate-700 bg-slate-950 shadow-2xl max-h-[92vh] overflow-y-auto">
         <div className="px-5 py-4 border-b border-slate-800 flex justify-between items-center sticky top-0 bg-slate-950/95 backdrop-blur z-10">
           <div>
-            <h3 className="font-semibold text-white">{isDraft ? "编辑草稿" : "修改申请"}</h3>
+            <h3 className="font-semibold text-white">
+              {adminMaintain ? "管理员修改资料" : isDraft ? "编辑草稿" : "修改申请"}
+            </h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              {isDraft ? "保存后可点「保存并提交审批」；材料按清单校验。" : "保存后请在列表中点「重新提交」送审，或在此一键保存并重新提交。"}
+              {adminMaintain
+                ? row.status === "approved"
+                  ? "保存后仍为「已通过」；若修改地址类型/区域将按新条件重新分配详细地址。"
+                  : row.status === "pending"
+                    ? "保存后仍为「待审批」，审批状态不变。"
+                    : "保存后仍为「已驳回」；修正后由业务员重新提交或您代为处理。"
+                : isDraft
+                  ? "保存后可点「保存并提交审批」；材料按清单校验。"
+                  : "保存后请在列表中点「重新提交」送审，或在此一键保存并重新提交。"}
             </p>
           </div>
           <button type="button" onClick={onClose} className="text-slate-500 hover:text-white text-lg leading-none shrink-0">
@@ -1120,10 +1170,18 @@ function EditAffiliationModal({
         </div>
         <form onSubmit={saveDraft} className="p-5 space-y-3">
           {msg && <p className="text-sm text-red-400">{msg}</p>}
-          {!isDraft && (
+          {!isDraft && row.status === "rejected" && (
             <div className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs text-slate-400">
               <span className="text-slate-500">上次驳回：</span>
               {row.review_comment || "—"}
+            </div>
+          )}
+          {adminMaintain && row.status !== "rejected" && (
+            <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200/90">
+              当前状态：{statusText[row.status] ?? row.status}
+              {row.status === "approved" && row.detail_address && (
+                <span className="block mt-1 text-slate-400">已分配地址：{row.detail_address}</span>
+              )}
             </div>
           )}
           <AffiliationAddressPreferenceFields
@@ -1151,18 +1209,22 @@ function EditAffiliationModal({
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg bg-slate-600 text-white hover:bg-slate-500 disabled:opacity-50"
+              className={`px-4 py-2 text-sm rounded-lg text-white disabled:opacity-50 ${
+                adminMaintain ? "bg-blue-600 hover:bg-blue-500" : "bg-slate-600 hover:bg-slate-500"
+              }`}
             >
-              {saving ? "保存中…" : "仅保存"}
+              {saving ? "保存中…" : adminMaintain ? "保存" : "仅保存"}
             </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => void saveAndSubmit()}
-              className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
-            >
-              {saving ? "处理中…" : isDraft ? "保存并提交审批" : "保存并重新提交"}
-            </button>
+            {!adminMaintain && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void saveAndSubmit()}
+                className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+              >
+                {saving ? "处理中…" : isDraft ? "保存并提交审批" : "保存并重新提交"}
+              </button>
+            )}
           </div>
         </form>
       </div>

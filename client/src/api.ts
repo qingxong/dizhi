@@ -1,4 +1,12 @@
-import type { Address, AddressChoice, AffiliationRequest, AuthUser, ManagedUser, StatsResponse } from "./types";
+import type {
+  Address,
+  AddressChoice,
+  AffiliationRequest,
+  AgreementPlaceholderDoc,
+  AuthUser,
+  ManagedUser,
+  StatsResponse,
+} from "./types";
 
 const cred: RequestInit = { credentials: "include" };
 
@@ -142,6 +150,58 @@ export const api = {
         body: fd,
       }).then((r) => parseJson<{ url: string }>(r));
     },
+    submitAgreement: (
+      id: string,
+      body: { enterprise_name: string; amount: string; service_start: string; service_end: string },
+    ) =>
+      fetch(`/api/affiliations/${id}/agreement/submit`, {
+        ...cred,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => parseJson<AffiliationRequest>(r)),
+    reviewAgreement: (id: string, body: { action: "approve" | "reject"; review_comment?: string }) =>
+      fetch(`/api/affiliations/${id}/agreement/review`, {
+        ...cred,
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => parseJson<AffiliationRequest>(r)),
+    uploadSignedAgreement: (id: string, file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return fetch(`/api/affiliations/${id}/agreement/signed`, {
+        ...cred,
+        method: "POST",
+        body: fd,
+      }).then((r) => parseJson<AffiliationRequest>(r));
+    },
+    downloadGeneratedAgreement: (id: string) =>
+      fetch(`/api/affiliations/${id}/agreement/generated`, cred),
+    downloadSignedAgreement: (id: string) => fetch(`/api/affiliations/${id}/agreement/signed`, cred),
+  },
+  agreementTemplate: {
+    placeholders: () =>
+      fetch("/api/agreement-template/placeholders", cred).then((r) =>
+        parseJson<{ placeholders: AgreementPlaceholderDoc[]; status_labels: Record<string, string> }>(r),
+      ),
+    info: () =>
+      fetch("/api/agreement-template/info", cred).then((r) =>
+        parseJson<{
+          exists: boolean;
+          updated_at: string | null;
+          size: number | null;
+          sample_data: Record<string, string>;
+        }>(r),
+      ),
+    upload: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return fetch("/api/agreement-template", { ...cred, method: "POST", body: fd }).then((r) =>
+        parseJson<{ exists: boolean; updated_at: string | null; size: number | null }>(r),
+      );
+    },
+    download: () => fetch("/api/agreement-template/download", cred),
   },
   stats: () => fetch("/api/stats", cred).then((r) => parseJson<StatsResponse>(r)),
   users: {

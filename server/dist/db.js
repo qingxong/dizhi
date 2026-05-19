@@ -101,6 +101,18 @@ db.exec(`
     add("requested_address_type", "TEXT");
     add("requested_address_region", "TEXT");
     add("group_name", "TEXT");
+    add("agreement_status", "TEXT NOT NULL DEFAULT 'none'");
+    add("agreement_enterprise_name", "TEXT");
+    add("agreement_amount", "TEXT");
+    add("agreement_service_start", "TEXT");
+    add("agreement_service_end", "TEXT");
+    add("agreement_submitted_at", "TEXT");
+    add("agreement_reviewed_at", "TEXT");
+    add("agreement_reviewer_name", "TEXT");
+    add("agreement_review_comment", "TEXT");
+    add("agreement_pdf_path", "TEXT");
+    add("agreement_signed_path", "TEXT");
+    add("agreement_completed_at", "TEXT");
 }
 /** 挂靠申请：业务员只填类型/区域，审批后分配 address_id；将 address_id 改为可空 */
 {

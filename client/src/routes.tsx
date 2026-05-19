@@ -9,6 +9,7 @@ import AnalyticsPage from "./pages/AnalyticsPage.tsx";
 import DashboardPage from "./pages/DashboardPage.tsx";
 import LoginPage from "./pages/LoginPage.tsx";
 import UsersPage from "./pages/UsersPage.tsx";
+import AgreementTemplatePage from "./pages/AgreementTemplatePage.tsx";
 
 export default function RootRoutes() {
   return (
@@ -21,6 +22,7 @@ export default function RootRoutes() {
             <Route element={<RequireAdmin />}>
               <Route path="addresses" element={<AddressesPage />} />
               <Route path="users" element={<UsersPage />} />
+              <Route path="agreement-template" element={<AgreementTemplatePage />} />
             </Route>
             <Route path="affiliations" element={<AffiliationsPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />

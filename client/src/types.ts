@@ -45,6 +45,22 @@ export type AddressChoice = Pick<Address, "id" | "address_type" | "address_regio
 
 export type AffiliationStatus = "draft" | "pending" | "approved" | "rejected";
 
+export type AgreementStatus = "none" | "pending" | "pdf_ready" | "completed" | "rejected";
+
+export const AGREEMENT_STATUS_LABELS: Record<AgreementStatus, string> = {
+  none: "未申请协议",
+  pending: "协议待审",
+  pdf_ready: "待回传盖章协议",
+  completed: "协议已完成",
+  rejected: "协议已驳回",
+};
+
+export interface AgreementPlaceholderDoc {
+  key: string;
+  label: string;
+  source: string;
+}
+
 export type AffiliationContactType = "channel" | "direct";
 
 export interface AffiliationRequest {
@@ -97,6 +113,18 @@ export interface AffiliationRequest {
   license_photo: string | null;
   /** 创建人用户 id；业务员仅可操作本人记录 */
   created_by_user_id?: string | null;
+  agreement_status: AgreementStatus;
+  agreement_enterprise_name: string | null;
+  agreement_amount: string | null;
+  agreement_service_start: string | null;
+  agreement_service_end: string | null;
+  agreement_submitted_at: string | null;
+  agreement_reviewed_at: string | null;
+  agreement_reviewer_name: string | null;
+  agreement_review_comment: string | null;
+  agreement_pdf_path: string | null;
+  agreement_signed_path: string | null;
+  agreement_completed_at: string | null;
 }
 
 export interface StatsResponse {

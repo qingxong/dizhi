@@ -1,11 +1,11 @@
 # 企业地址管理
 
-内部使用的**地址库**与**地址挂靠申请**管理：业务员可创建与跟进挂靠流程；管理员维护地址资源、审批申请，并管理业务员账号。
+内部使用的**地址库**、**地址挂靠申请**与**地址协议**管理系统：业务员创建并跟进挂靠与协议流程；管理员维护地址资源、审批申请、配置协议 Word 模板并管理账号。
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | React 19、Vite 6、TypeScript、Tailwind CSS 4、React Router 7 |
-| 后端 | Express 4、TypeScript、`node:sqlite`（SQLite）、express-session、Multer（证件图上传） |
+| 前端 | React 19、Vite 6、TypeScript、Tailwind CSS 4、React Router 7、SheetJS（`xlsx`，地址批量导入） |
+| 后端 | Express 4、TypeScript、`node:sqlite`（SQLite）、express-session、Multer（图片/PDF/模板上传）、docxtemplater（协议 Word 填充） |
 
 仓库为 **npm workspaces** 单体：`client/` 与 `server/`。
 
@@ -13,27 +13,86 @@
 
 ## 功能概览
 
-- **登录与会话**：基于 Cookie 的会话；角色分为**管理员**与**业务员**。
-- **总览**：工作台入口。
-- **地址库**（仅管理员）：维护三类地址资源——地址挂靠、集中办公区、商务秘书。
-- **挂靠流程**（登录用户）：新建申请（草稿或直接提交审批）、编辑草稿、提交/重新提交；材料按**渠道 / 直客**区分字段；身份证与执照支持本地上传；列表支持**关键词查询**与**状态下拉筛选**（草稿、待审批、已通过、已驳回）。
-- **统计分析**：数据看板（按当前实现展示统计信息）。
-- **用户管理**（仅管理员）：修改账号显示名与密码；增删业务员账号。
+### 登录与会话
 
-申请中的**服务类型**与所选**关联地址的地址类型**一致，随地址自动同步（与地址库三类一致）。
+- 基于 Cookie 的会话；角色分为**管理员**与**业务员**。
+- 演示账号见下文「快速开始」；生产环境须修改默认密码并配置 `SESSION_SECRET`。
+
+### 总览
+
+- 工作台入口；管理员可见全平台统计，业务员可见本人挂靠相关统计。
+
+### 地址库（仅管理员）
+
+- 维护三类地址资源：**地址挂靠**、**集中办公区**、**商务秘书**（`address_type`）。
+- 每条地址包含：类型、区域、详细地址。
+- **占用状态**：`可领取` / `已领取`（由「已通过且已分配详细地址」的挂靠申请占用，与审批分配逻辑一致）。
+- 支持按类型、关键词、占用状态筛选；已被占用的地址不可删除。
+- **批量导入**：下载 Excel 模板或粘贴 TSV，单次最多 500 条（表头支持中英文列名）。
+
+### 挂靠流程（登录用户）
+
+**申请阶段（业务员）**
+
+- 选择**地址类型**与**地址区域**（区域来自地址库中该类型已有区域，不手选具体门牌）。
+- 填写：申请人（默认当前账号显示名）、**群名称**（服务群，选填）、说明。
+- **联络人与材料**：渠道 / 直客两套字段；法人身份证正反面、执照等支持本地上传（JPEG/PNG/WebP，单张 ≤ 8MB）。
+- 「是否用于办理地址变更」为必选（是/否）；选「是」须上传执照照片。
+- 可保存**草稿**或直接**提交审批**；已驳回可修改后**重新提交**。
+
+**审批阶段（管理员）**
+
+- 对「待审批」记录**通过**或**驳回**；通过时从地址库同类型、同区域中自动分配一条**未被占用**的详细地址。
+- 可在**任意挂靠状态**下**修改资料**（不改变审批状态；已通过且改类型/区域时会按新条件重新分配地址）。
+- 可删除挂靠申请（管理员）。
+
+**列表与检索**
+
+- 列展示：地址需求（含详细地址展示与复制）、法人姓名/电话/群名称、渠道直客、挂靠状态、**地址协议**进度、时间线、操作。
+- 关键词搜索（法人、电话、群名称、地址、申请人等）；状态下拉筛选（草稿 / 待审批 / 已通过 / 已驳回）。
+
+库内 `service_type` 与地址类型对应，界面不再单独维护「服务类型」下拉。
+
+### 地址协议（挂靠「已通过」之后）
+
+在**同一条挂靠记录**上延续的子流程：
+
+| 步骤 | 角色 | 说明 |
+|------|------|------|
+| 1 | 业务员 | 点击「申请协议」，填写**企业名称、金额、服务开始/结束时间**，提交审核 |
+| 2 | 管理员 | 在「协议模板」页维护 Word（`.docx`）模板；对「协议待审」记录**通过并生成**或驳回 |
+| 3 | 业务员 | **下载协议**（PDF 优先，见环境说明）发给客户盖章 |
+| 4 | 业务员 | **回传盖章协议**（PDF） |
+| 5 | — | 状态变为「协议已完成」，流程结束 |
+
+协议状态：`未申请` → `协议待审` → `待回传盖章协议` → `协议已完成`（驳回后可重新申请）。
+
+### 协议模板（仅管理员）
+
+- 路径：导航 **协议模板**。
+- 上传/下载 `.docx` 模板；页面列出全部**占位符**及示例值（如 `{enterprise_name}`、`{amount}`、`{amount_cn}`、`{detail_address}` 等）。
+- 生成逻辑使用 [docxtemplater](https://docxtemplater.com/) 填充模板。
+
+### 统计分析
+
+- 按角色展示地址与挂靠相关统计（业务员仅本人挂靠数据）。
+
+### 用户管理（仅管理员）
+
+- 修改管理员密码；增删改业务员账号（用户名、显示名、密码）。
 
 ---
 
 ## 环境要求
 
-- **Node.js ≥ 22.5**（服务端 `package.json` 的 `engines` 约定；使用内置 `node:sqlite`）。
-- 推荐使用当前 LTS 或项目已验证的 Node 22+ 版本。
+- **Node.js ≥ 22.5**（服务端使用内置 `node:sqlite`，见 `server/package.json` 的 `engines`）。
+- **地址协议导出 PDF（推荐）**：安装 [LibreOffice](https://www.libreoffice.org/)，确保命令行可调用 `soffice`（Windows 可设置环境变量 `LIBREOFFICE_PATH` 指向 `soffice.exe`）。未安装时审核通过后仍会生成 **DOCX**，可下载后自行转 PDF。
 
 ---
 
 ## 快速开始（本地开发）
 
-在项目根目录安装依赖后执行：
+在项目根目录：
 
 ```bash
 npm install
@@ -42,19 +101,19 @@ npm run dev
 
 会并行启动：
 
-- **前端**：<http://localhost:5173/>（Vite 开发服务器）
+- **前端**：<http://localhost:5173/>（Vite）
 - **API**：默认 <http://localhost:3889/>（Express）
 
-浏览器访问前端即可；`/api` 由 Vite **代理**到后端，无需单独配置 CORS 给前端。
+浏览器访问前端；`/api` 由 Vite **代理**到后端。
 
 ### 演示账号（开发环境）
 
-| 角色   | 用户名 | 密码     |
-|--------|--------|----------|
+| 角色   | 用户名 | 密码       |
+|--------|--------|------------|
 | 管理员 | `admin` | `admin123` |
 | 业务员 | `sales` | `sales123` |
 
-**生产环境请务必：** 修改全部默认密码，并设置强随机 **`SESSION_SECRET`**（勿使用仓库中的开发默认值）。
+**生产环境请务必：** 修改全部默认密码，并设置强随机 **`SESSION_SECRET`**。
 
 ---
 
@@ -63,17 +122,18 @@ npm run dev
 | 命令 | 说明 |
 |------|------|
 | `npm run dev` | 同时启动前后端开发模式 |
-| `npm run build` | 依次构建 `server` 与 `client`（`tsc` + `vite build`） |
-| `npm run start` | 仅启动已构建的后端（`node dist/index.js`，见 `server` 包） |
+| `npm run build` | 依次构建 `server`（`tsc`）与 `client`（`tsc -b` + `vite build`） |
+| `npm run start` | 启动已构建的后端（`server/dist/index.js`） |
 | `npm run dev -w client` / `npm run dev -w server` | 单独启动某一端 |
 
-使用 **`vite preview`** 预览前端构建产物时，须**另开终端**先启动 API，例如：
+预览前端构建产物时，须另开终端启动 API，例如：
 
 ```bash
 npm run start -w server
+cd client && npm run preview
 ```
 
-并在 `client` 目录执行 `npm run preview`（`vite.config.ts` 已为 `preview` 配置与开发环境相同的 `/api` 代理目标端口）。
+`client/vite.config.ts` 中 `preview` 与 `dev` 使用相同的 `/api` 代理端口配置。
 
 ---
 
@@ -81,8 +141,12 @@ npm run start -w server
 
 | 变量 | 说明 |
 |------|------|
-| `PORT` 或 `API_PORT` | API 监听端口，默认 **`3889`**。修改后须与 `client/vite.config.ts` 中代理使用的端口**一致**（或通过同名环境变量让 Vite 读取同一端口）。 |
-| `SESSION_SECRET` | 会话签名密钥，**生产必填**。 |
+| `PORT` / `API_PORT` | API 监听端口，默认 **3889**；修改后须与 Vite 代理端口一致 |
+| `SESSION_SECRET` | 会话签名密钥，**生产必填** |
+| `LIBREOFFICE_PATH` | （可选）LibreOffice `soffice` 可执行文件完整路径，用于协议 DOCX→PDF |
+| `CLIENT_ORIGIN` | （可选）CORS 允许来源 |
+| `TRUST_PROXY` | 设为 `1` 时信任反向代理（影响 Cookie `secure` 等） |
+| `COOKIE_SECURE` | 设为 `1` 时 Cookie 仅 HTTPS |
 
 PowerShell 示例（改用 3890 端口）：
 
@@ -90,14 +154,20 @@ PowerShell 示例（改用 3890 端口）：
 $env:PORT='3890'; $env:API_PORT='3890'; npm run dev
 ```
 
-同时需让 Vite 进程看到相同的 `API_PORT`/`PORT`，否则代理仍指向旧端口。
-
 ---
 
-## 数据与上传
+## 数据与文件存储
 
-- **SQLite 数据库**默认路径：`server/data/addresses.db`（首次运行自动创建目录与表结构；含演示数据种子逻辑，详见 `server/src/db.ts`）。
-- **证件类图片**上传后保存在服务端上传目录，通过 `/api/uploads/...` 在登录会话下访问（具体见 `server/src/index.ts`）。
+| 路径 | 说明 |
+|------|------|
+| `server/data/addresses.db` | SQLite 数据库（首次运行自动建表与迁移；含演示种子数据） |
+| `server/data/uploads/` | 证件图、执照图等上传文件 |
+| `server/data/agreement-template/template.docx` | 管理员上传的协议 Word 模板 |
+| `server/data/uploads/agreements/` | 生成的协议与业务员回传的盖章 PDF |
+
+上传的证件图通过登录会话访问：`GET /api/uploads/:filename`。
+
+协议文件下载：`GET /api/affiliations/:id/agreement/generated`、`GET /api/affiliations/:id/agreement/signed`。
 
 ---
 
@@ -105,11 +175,34 @@ $env:PORT='3890'; $env:API_PORT='3890'; npm run dev
 
 | 能力 | 管理员 | 业务员 |
 |------|--------|--------|
-| 地址库 CRUD | ✓ | — |
+| 地址库 CRUD、批量导入 | ✓ | — |
+| 协议模板配置 | ✓ | — |
 | 用户管理 | ✓ | — |
-| 挂靠申请列表 | 全部 | 仅本人创建的申请 |
-| 审批通过 / 驳回 | ✓ | — |
-| 创建与编辑自己的申请 | ✓ | ✓ |
+| 挂靠列表 | 全部 | 仅本人创建 |
+| 挂靠审批通过/驳回 | ✓ | — |
+| 挂靠任意状态修改资料 | ✓ | 草稿、已驳回 |
+| 删除挂靠申请 | ✓ | — |
+| 创建/编辑/提交自己的挂靠 | ✓ | ✓ |
+| 地址协议申请、下载、回传 | ✓ | ✓（本人记录） |
+| 地址协议审核、生成 PDF | ✓ | — |
+
+---
+
+## 协议模板占位符（Word 内写法 `{key}`）
+
+| 占位符 | 含义 |
+|--------|------|
+| `enterprise_name` | 企业名称（协议表单） |
+| `amount` / `amount_cn` | 金额 / 金额大写 |
+| `service_start` / `service_end` | 服务起止日期 |
+| `legal_name` / `legal_phone` / `legal_contact_address` / `legal_email` | 法人信息（来自挂靠材料） |
+| `applicant_name` / `group_name` | 申请人 / 群名称 |
+| `address_type_label` / `address_region` / `detail_address` | 地址类型、区域、详细地址 |
+| `service_type` | 服务类型（库内字段） |
+| `today` | 生成当日日期 |
+| `agreement_no` | 协议编号（申请 ID 简写） |
+
+完整列表与示例值见管理端 **协议模板** 页面或 `GET /api/agreement-template/placeholders`。
 
 ---
 
@@ -117,19 +210,38 @@ $env:PORT='3890'; $env:API_PORT='3890'; npm run dev
 
 ### 端口被占用（EADDRINUSE）
 
-表示 API 监听端口已被占用。可关闭其它终端中的旧 `node`/`tsx` 进程，或按上文修改 **`PORT` / `API_PORT`** 并保证与前端代理一致。
+关闭占用端口的旧 `node`/`tsx` 进程，或修改 `PORT`/`API_PORT` 并保持与 Vite 代理一致。
 
-### 数据库 / 表结构
+### 协议生成失败或只有 DOCX
 
-若曾使用极旧版本库结构，启动时可能触发迁移或重建逻辑（以 `server/src/db.ts` 为准）。生产环境升级前请**备份** `addresses.db`。
+1. 确认管理员已在 **协议模板** 上传 `.docx`。  
+2. 确认服务器已安装 LibreOffice 且 `soffice` 可用，或配置 `LIBREOFFICE_PATH`。  
+3. 模板占位符须与上表一致（docxtemplater 语法 `{key}`）。
+
+### 数据库升级
+
+启动时 `server/src/db.ts` 会对 `affiliation_requests` 等表执行 `ALTER TABLE` 迁移。生产升级前请**备份** `addresses.db`。
+
+### 登录接口 404
+
+确认后端已启动且终端出现 API listening；检查 Vite 代理端口是否与 API 一致。
 
 ---
 
 ## 目录结构（简）
 
 ```
-client/src/     # React 页面、路由、鉴权、API 封装
-server/src/     # Express 入口、会话、REST、SQLite 初始化
+client/src/
+  pages/          # 各业务页面（挂靠、地址库、协议模板、用户等）
+  api.ts          # 前端 API 封装
+  types.ts        # 共享类型
+server/src/
+  index.ts        # Express 入口、REST、会话
+  db.ts           # SQLite 初始化与迁移
+  affiliationAddress.ts   # 地址分配、占用查询
+  affiliationMaterial.ts  # 材料校验
+  agreement/      # 协议模板、生成、上传路由
+  idPhotoUpload.ts
 ```
 
-更细的开发计划与待办见仓库内 `开发计划`（纯文本备忘，非构建产物）。
+更细的需求与备忘见仓库内 `开发计划`（非构建产物）。

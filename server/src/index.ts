@@ -23,6 +23,7 @@ import {
 } from "./affiliationMaterial.js";
 import { db } from "./db.js";
 import { ID_PHOTO_UPLOAD_DIR, idPhotoMulter } from "./idPhotoUpload.js";
+import { registerAgreementRoutes } from "./agreement/routes.js";
 import { requireAdmin, requireAuth } from "./middleware/auth.js";
 
 type SqlParam = string | number | bigint | null;
@@ -769,10 +770,17 @@ api.patch("/affiliations/:id", (req, res) => {
       );
     }
   } else {
-    const canEdit = cur.status === "draft" || cur.status === "rejected";
-    if (!canEdit) {
+    const salesCanEdit = cur.status === "draft" || cur.status === "rejected";
+    if (!isAdmin && !salesCanEdit) {
       return res.status(400).json({ error: "当前状态不可修改" });
     }
+    const prevApproved =
+      isAdmin && cur.status === "approved"
+        ? (db.prepare("SELECT requested_address_type, requested_address_region FROM affiliation_requests WHERE id = ?").get(
+            id,
+          ) as { requested_address_type: string; requested_address_region: string })
+        : null;
+
     const { fields, vals, error } = collectAffiliationDraftUpdates(b);
     if (error) return res.status(400).json({ error });
     if (!fields.length) {
@@ -782,6 +790,27 @@ api.patch("/affiliations/:id", (req, res) => {
     vals.push(t);
     vals.push(id);
     db.prepare(`UPDATE affiliation_requests SET ${fields.join(", ")} WHERE id = ?`).run(...(vals as SqlParam[]));
+
+    if (prevApproved && (b.requested_address_type !== undefined || b.requested_address_region !== undefined)) {
+      const full = db.prepare("SELECT requested_address_type, requested_address_region FROM affiliation_requests WHERE id = ?").get(
+        id,
+      ) as { requested_address_type: string; requested_address_region: string };
+      const regionErr = assertRequestedRegion(full);
+      if (regionErr) return res.status(400).json({ error: regionErr });
+      const changed =
+        full.requested_address_type !== prevApproved.requested_address_type ||
+        full.requested_address_region.trim() !== prevApproved.requested_address_region.trim();
+      if (changed) {
+        const reqType = full.requested_address_type as AffAddressType;
+        const assignedId = findAvailableAddressId(reqType, full.requested_address_region);
+        if (!assignedId) {
+          return res.status(400).json({
+            error: `「${full.requested_address_region}」下暂无可用详细地址，请先在地址库补充该类型/区域资源`,
+          });
+        }
+        db.prepare("UPDATE affiliation_requests SET address_id = ?, updated_at = ? WHERE id = ?").run(assignedId, t, id);
+      }
+    }
   }
 
   const row = db.prepare(`${AFFILIATION_ROW_SELECT} WHERE r.id = ?`).get(id);
@@ -798,6 +827,13 @@ api.delete("/affiliations/:id", (req, res) => {
   const r = db.prepare("DELETE FROM affiliation_requests WHERE id = ?").run(id);
   if (Number(r.changes) === 0) return res.status(404).json({ error: "未找到申请" });
   res.status(204).send();
+});
+
+registerAgreementRoutes(api, {
+  db,
+  requireAdmin,
+  canAccessAffiliationRow,
+  affiliationRowSelect: AFFILIATION_ROW_SELECT,
 });
 
 api.get("/stats", (req, res) => {
