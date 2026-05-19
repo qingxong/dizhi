@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { api } from "../api";
 import type { AffiliationContactType, AffiliationRequest, AddressType } from "../types";
 import { ADDRESS_TYPE_LABELS, AGREEMENT_STATUS_LABELS } from "../types";
+import { validateMaterialFormFormats } from "../utils/contactFormat";
 import { AffiliationAgreementActions } from "./AffiliationAgreementActions.tsx";
 
 const statusStyle: Record<string, string> = {
@@ -37,6 +38,7 @@ type MaterialFormState = {
   legal_id_front: string;
   legal_id_back: string;
   legal_name: string;
+  legal_id_number: string;
   legal_phone: string;
   legal_contact_address: string;
   legal_email: string;
@@ -56,6 +58,7 @@ function emptyMaterial(): MaterialFormState {
     legal_id_front: "",
     legal_id_back: "",
     legal_name: "",
+    legal_id_number: "",
     legal_phone: "",
     legal_contact_address: "",
     legal_email: "",
@@ -77,6 +80,7 @@ function rowToMaterial(r: AffiliationRequest): MaterialFormState {
     legal_id_front: r.legal_id_front ?? "",
     legal_id_back: r.legal_id_back ?? "",
     legal_name: r.legal_name ?? "",
+    legal_id_number: r.legal_id_number ?? "",
     legal_phone: r.legal_phone ?? "",
     legal_contact_address: r.legal_contact_address ?? "",
     legal_email: r.legal_email ?? "",
@@ -97,6 +101,7 @@ function materialToApiBody(m: MaterialFormState): Record<string, unknown> {
     legal_id_front: m.legal_id_front.trim() || null,
     legal_id_back: m.legal_id_back.trim() || null,
     legal_name: m.legal_name.trim() || null,
+    legal_id_number: m.legal_id_number.trim().toUpperCase() || null,
     legal_phone: m.legal_phone.trim() || null,
     legal_contact_address: m.legal_contact_address.trim() || null,
     legal_email: m.legal_email.trim() || null,
@@ -108,6 +113,26 @@ function materialToApiBody(m: MaterialFormState): Record<string, unknown> {
 
 function inputCls() {
   return "w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white placeholder:text-slate-600";
+}
+
+/** 挂靠表单：提交按钮上方的校验/错误提示 */
+function FormSubmitAlert({ message }: { message: string | null }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (message && ref.current) {
+      ref.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [message]);
+  if (!message) return null;
+  return (
+    <div
+      ref={ref}
+      role="alert"
+      className="rounded-lg border border-red-500/50 bg-red-950/50 px-3 py-2.5 text-sm text-red-200"
+    >
+      {message}
+    </div>
+  );
 }
 
 /** 列表「地址需求」：完整展示详细地址，支持一键复制 */
@@ -414,8 +439,23 @@ function MaterialFormBody({
             <input className={inputCls()} value={value.legal_name} onChange={(e) => onChange({ legal_name: e.target.value })} />
           </div>
           <div>
+            <label className="block text-[11px] text-slate-500 mb-1">法人身份证号 *</label>
+            <input
+              className={inputCls()}
+              value={value.legal_id_number}
+              onChange={(e) => onChange({ legal_id_number: e.target.value.toUpperCase() })}
+              placeholder="18位身份证号码"
+              maxLength={18}
+            />
+          </div>
+          <div>
             <label className="block text-[11px] text-slate-500 mb-1">法人手机号 *</label>
-            <input className={inputCls()} value={value.legal_phone} onChange={(e) => onChange({ legal_phone: e.target.value })} />
+            <input
+              className={inputCls()}
+              value={value.legal_phone}
+              onChange={(e) => onChange({ legal_phone: e.target.value })}
+              placeholder="11位手机号"
+            />
           </div>
           <div className="sm:col-span-2">
             <label className="block text-[11px] text-slate-500 mb-1">法人联系地址 *</label>
@@ -427,7 +467,13 @@ function MaterialFormBody({
           </div>
           <div className="sm:col-span-2">
             <label className="block text-[11px] text-slate-500 mb-1">法人邮箱 *</label>
-            <input className={inputCls()} value={value.legal_email} onChange={(e) => onChange({ legal_email: e.target.value })} />
+            <input
+              className={inputCls()}
+              type="email"
+              value={value.legal_email}
+              onChange={(e) => onChange({ legal_email: e.target.value })}
+              placeholder="name@example.com"
+            />
           </div>
           <div>
             <label className="block text-[11px] text-slate-500 mb-1">企业备用联系人姓名 *</label>
@@ -1058,6 +1104,7 @@ function ViewMaterialModal({ row, onClose }: { row: AffiliationRequest; onClose:
             <IdPhotoReadonly label="法人身份证正面" url={row.legal_id_front} />
             <IdPhotoReadonly label="法人身份证反面" url={row.legal_id_back} />
             <Field label="法人姓名" value={row.legal_name} />
+            <Field label="法人身份证号" value={row.legal_id_number} />
             <Field label="法人手机" value={row.legal_phone} />
             <Field label="法人联系地址" value={row.legal_contact_address} />
             <Field label="法人邮箱" value={row.legal_email} />
@@ -1135,6 +1182,11 @@ function EditAffiliationModal({
       setMsg("请选择地址区域");
       return;
     }
+    const formatErr = validateMaterialFormFormats(mat, { requireIdNumber: true });
+    if (formatErr) {
+      setMsg(formatErr);
+      return;
+    }
     setSaving(true);
     setMsg(null);
     try {
@@ -1176,7 +1228,6 @@ function EditAffiliationModal({
           </button>
         </div>
         <form onSubmit={saveDraft} className="p-5 space-y-3">
-          {msg && <p className="text-sm text-red-400">{msg}</p>}
           {!isDraft && row.status === "rejected" && (
             <div className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs text-slate-400">
               <span className="text-slate-500">上次驳回：</span>
@@ -1209,29 +1260,32 @@ function EditAffiliationModal({
           <label className="block text-xs text-slate-500">说明</label>
           <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls()} />
           <MaterialFormBody value={mat} onChange={(p) => setMat((prev) => ({ ...prev, ...p }))} />
-          <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-slate-800">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-600">
-              取消
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className={`px-4 py-2 text-sm rounded-lg text-white disabled:opacity-50 ${
-                adminMaintain ? "bg-blue-600 hover:bg-blue-500" : "bg-slate-600 hover:bg-slate-500"
-              }`}
-            >
-              {saving ? "保存中…" : adminMaintain ? "保存" : "仅保存"}
-            </button>
-            {!adminMaintain && (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void saveAndSubmit()}
-                className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
-              >
-                {saving ? "处理中…" : isDraft ? "保存并提交审批" : "保存并重新提交"}
+          <div className="sticky bottom-0 -mx-5 px-5 pt-3 mt-2 border-t border-slate-800 bg-slate-950/95 backdrop-blur space-y-2">
+            <FormSubmitAlert message={msg} />
+            <div className="flex flex-wrap justify-end gap-2 pb-1">
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-600">
+                取消
               </button>
-            )}
+              <button
+                type="submit"
+                disabled={saving}
+                className={`px-4 py-2 text-sm rounded-lg text-white disabled:opacity-50 ${
+                  adminMaintain ? "bg-blue-600 hover:bg-blue-500" : "bg-slate-600 hover:bg-slate-500"
+                }`}
+              >
+                {saving ? "保存中…" : adminMaintain ? "保存" : "仅保存"}
+              </button>
+              {!adminMaintain && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void saveAndSubmit()}
+                  className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+                >
+                  {saving ? "处理中…" : isDraft ? "保存并提交审批" : "保存并重新提交"}
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </div>
@@ -1261,6 +1315,11 @@ function NewAffiliationModal({ onClose, onCreated }: { onClose: () => void; onCr
     e.preventDefault();
     if (!addressRegion.trim()) {
       setMsg("请选择地址区域");
+      return;
+    }
+    const formatErr = validateMaterialFormFormats(mat, { requireIdNumber: submitNow });
+    if (formatErr) {
+      setMsg(formatErr);
       return;
     }
     setSaving(true);
@@ -1294,7 +1353,6 @@ function NewAffiliationModal({ onClose, onCreated }: { onClose: () => void; onCr
           </button>
         </div>
         <form onSubmit={submit} className="p-5 space-y-3">
-          {msg && <p className="text-sm text-red-400">{msg}</p>}
           <AffiliationAddressPreferenceFields
             addressType={addressType}
             addressRegion={addressRegion}
@@ -1322,17 +1380,20 @@ function NewAffiliationModal({ onClose, onCreated }: { onClose: () => void; onCr
             <input type="checkbox" checked={submitNow} onChange={(e) => setSubmitNow(e.target.checked)} />
             创建后直接提交审批（将校验材料必填项）
           </label>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-600">
-              取消
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white disabled:opacity-50"
-            >
-              {saving ? "提交中…" : "确定"}
-            </button>
+          <div className="sticky bottom-0 -mx-5 px-5 pt-3 mt-2 border-t border-slate-800 bg-slate-950/95 backdrop-blur space-y-2">
+            <FormSubmitAlert message={msg} />
+            <div className="flex justify-end gap-2 pb-1">
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-600">
+                取消
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white disabled:opacity-50"
+              >
+                {saving ? "提交中…" : "确定"}
+              </button>
+            </div>
           </div>
         </form>
       </div>

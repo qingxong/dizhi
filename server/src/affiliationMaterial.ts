@@ -1,5 +1,7 @@
 /** 地址领取：联络人类型 + 材料清单（与《开发计划》一致） */
 
+import { validateAffiliationMaterialFormats } from "./contactFormat.js";
+
 export type ContactType = "channel" | "direct";
 
 export const AFFILIATION_MATERIAL_COLUMNS = [
@@ -12,6 +14,7 @@ export const AFFILIATION_MATERIAL_COLUMNS = [
   "legal_id_front",
   "legal_id_back",
   "legal_name",
+  "legal_id_number",
   "legal_phone",
   "legal_contact_address",
   "legal_email",
@@ -47,6 +50,10 @@ export function materialFromBody(b: Record<string, unknown>): Record<Affiliation
     legal_id_front: str("legal_id_front"),
     legal_id_back: str("legal_id_back"),
     legal_name: str("legal_name"),
+    legal_id_number: (() => {
+      const s = str("legal_id_number");
+      return s ? s.toUpperCase() : null;
+    })(),
     legal_phone: str("legal_phone"),
     legal_contact_address: str("legal_contact_address"),
     legal_email: str("legal_email"),
@@ -74,6 +81,7 @@ export function validateAffiliationMaterial(row: Record<string, unknown>): strin
   if (!nonempty(row.legal_id_front)) return "请上传企业法人身份证正面照片";
   if (!nonempty(row.legal_id_back)) return "请上传企业法人身份证反面照片";
   if (!nonempty(row.legal_name)) return "请填写企业法人姓名";
+  if (!nonempty(row.legal_id_number)) return "请填写法人身份证号";
   if (!nonempty(row.legal_phone)) return "请填写企业法人手机号";
   if (!nonempty(row.legal_contact_address)) return "请填写企业法人联系地址";
   if (!nonempty(row.legal_email)) return "请填写企业法人邮箱";
@@ -85,7 +93,7 @@ export function validateAffiliationMaterial(row: Record<string, unknown>): strin
     return "已选择用于办理地址变更：请上传执照照片";
   }
 
-  return null;
+  return validateAffiliationMaterialFormats(row);
 }
 
 export function mergeMaterialIntoRow(base: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
@@ -112,6 +120,7 @@ export function materialPatchFromBody(b: Record<string, unknown>): Partial<Recor
     "legal_id_front",
     "legal_id_back",
     "legal_name",
+    "legal_id_number",
     "legal_phone",
     "legal_contact_address",
     "legal_email",
@@ -122,7 +131,13 @@ export function materialPatchFromBody(b: Record<string, unknown>): Partial<Recor
   for (const k of strCols) {
     if (b[k] !== undefined) {
       const v = b[k];
-      patch[k] = v === null || v === "" ? null : String(v).trim();
+      if (v === null || v === "") {
+        patch[k] = null;
+      } else if (k === "legal_id_number") {
+        patch[k] = String(v).trim().toUpperCase();
+      } else {
+        patch[k] = String(v).trim();
+      }
     }
   }
   return patch;

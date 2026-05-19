@@ -110,6 +110,7 @@ db.exec(`
   add("requested_address_type", "TEXT");
   add("requested_address_region", "TEXT");
   add("group_name", "TEXT");
+  add("legal_id_number", "TEXT");
   add("agreement_status", "TEXT NOT NULL DEFAULT 'none'");
   add("agreement_enterprise_name", "TEXT");
   add("agreement_amount", "TEXT");

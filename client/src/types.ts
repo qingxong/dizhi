@@ -104,6 +104,8 @@ export interface AffiliationRequest {
   /** 反面照片：上传后的访问路径（如 /api/uploads/xxx.jpg） */
   legal_id_back: string | null;
   legal_name: string | null;
+  /** 法人身份证号码（18位） */
+  legal_id_number: string | null;
   legal_phone: string | null;
   legal_contact_address: string | null;
   legal_email: string | null;
@@ -132,6 +134,8 @@ export interface StatsResponse {
   platformAddressStats?: boolean;
   totalAddresses: number;
   pendingApprovals: number;
+  /** 协议状态为「协议待审」的数量 */
+  pendingAgreementApprovals: number;
   addressesByType: Record<string, number>;
   affiliationsByStatus: Record<string, number>;
   newAddressesLast12Months: { month: string; count: number }[];

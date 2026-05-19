@@ -1,4 +1,5 @@
 /** 地址领取：联络人类型 + 材料清单（与《开发计划》一致） */
+import { validateAffiliationMaterialFormats } from "./contactFormat.js";
 export const AFFILIATION_MATERIAL_COLUMNS = [
     "contact_type",
     "need_address_change",
@@ -9,6 +10,7 @@ export const AFFILIATION_MATERIAL_COLUMNS = [
     "legal_id_front",
     "legal_id_back",
     "legal_name",
+    "legal_id_number",
     "legal_phone",
     "legal_contact_address",
     "legal_email",
@@ -41,6 +43,10 @@ export function materialFromBody(b) {
         legal_id_front: str("legal_id_front"),
         legal_id_back: str("legal_id_back"),
         legal_name: str("legal_name"),
+        legal_id_number: (() => {
+            const s = str("legal_id_number");
+            return s ? s.toUpperCase() : null;
+        })(),
         legal_phone: str("legal_phone"),
         legal_contact_address: str("legal_contact_address"),
         legal_email: str("legal_email"),
@@ -71,6 +77,8 @@ export function validateAffiliationMaterial(row) {
         return "请上传企业法人身份证反面照片";
     if (!nonempty(row.legal_name))
         return "请填写企业法人姓名";
+    if (!nonempty(row.legal_id_number))
+        return "请填写法人身份证号";
     if (!nonempty(row.legal_phone))
         return "请填写企业法人手机号";
     if (!nonempty(row.legal_contact_address))
@@ -85,7 +93,7 @@ export function validateAffiliationMaterial(row) {
     if (need && !nonempty(row.license_photo)) {
         return "已选择用于办理地址变更：请上传执照照片";
     }
-    return null;
+    return validateAffiliationMaterialFormats(row);
 }
 export function mergeMaterialIntoRow(base, b) {
     const m = materialFromBody(b);
@@ -110,6 +118,7 @@ export function materialPatchFromBody(b) {
         "legal_id_front",
         "legal_id_back",
         "legal_name",
+        "legal_id_number",
         "legal_phone",
         "legal_contact_address",
         "legal_email",
@@ -120,7 +129,15 @@ export function materialPatchFromBody(b) {
     for (const k of strCols) {
         if (b[k] !== undefined) {
             const v = b[k];
-            patch[k] = v === null || v === "" ? null : String(v).trim();
+            if (v === null || v === "") {
+                patch[k] = null;
+            }
+            else if (k === "legal_id_number") {
+                patch[k] = String(v).trim().toUpperCase();
+            }
+            else {
+                patch[k] = String(v).trim();
+            }
         }
     }
     return patch;

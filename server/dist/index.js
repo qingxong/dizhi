@@ -535,17 +535,24 @@ api.post("/affiliations", (req, res) => {
     if (!ownerId) {
         return res.status(401).json({ error: "未登录" });
     }
-    db.prepare(`INSERT INTO affiliation_requests (
-      id, address_id, requested_address_type, requested_address_region,
-      applicant_name, applicant_dept, service_type, status, notes, group_name,
-      contact_type, need_address_change,
-      channel_common_contact_name, channel_common_contact_phone,
-      channel_backup_contact_name, channel_backup_contact_phone,
-      legal_id_front, legal_id_back, legal_name, legal_phone, legal_contact_address, legal_email,
-      enterprise_backup_name, enterprise_backup_phone, license_photo,
-      created_by_user_id,
-      created_at, updated_at, submitted_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, null, reqType, requestedRegion, applicant, applicantDept, serviceType, status, b.notes != null && b.notes !== "" ? String(b.notes) : null, b.group_name != null && String(b.group_name).trim() !== "" ? String(b.group_name).trim() : null, material.contact_type, material.need_address_change, material.channel_common_contact_name, material.channel_common_contact_phone, material.channel_backup_contact_name, material.channel_backup_contact_phone, material.legal_id_front, material.legal_id_back, material.legal_name, material.legal_phone, material.legal_contact_address, material.legal_email, material.enterprise_backup_name, material.enterprise_backup_phone, material.license_photo, ownerId, t, t, submittedAt);
+    try {
+        db.prepare(`INSERT INTO affiliation_requests (
+        id, address_id, requested_address_type, requested_address_region,
+        applicant_name, applicant_dept, service_type, status, notes, group_name,
+        contact_type, need_address_change,
+        channel_common_contact_name, channel_common_contact_phone,
+        channel_backup_contact_name, channel_backup_contact_phone,
+        legal_id_front, legal_id_back, legal_name, legal_id_number, legal_phone, legal_contact_address, legal_email,
+        enterprise_backup_name, enterprise_backup_phone, license_photo,
+        created_by_user_id,
+        created_at, updated_at, submitted_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, null, reqType, requestedRegion, applicant, applicantDept, serviceType, status, b.notes != null && b.notes !== "" ? String(b.notes) : null, b.group_name != null && String(b.group_name).trim() !== "" ? String(b.group_name).trim() : null, material.contact_type, material.need_address_change, material.channel_common_contact_name, material.channel_common_contact_phone, material.channel_backup_contact_name, material.channel_backup_contact_phone, material.legal_id_front, material.legal_id_back, material.legal_name, material.legal_id_number, material.legal_phone, material.legal_contact_address, material.legal_email, material.enterprise_backup_name, material.enterprise_backup_phone, material.license_photo, ownerId, t, t, submittedAt);
+    }
+    catch (e) {
+        console.error(e);
+        const msg = e instanceof Error ? e.message : "创建失败";
+        return res.status(500).json({ error: msg });
+    }
     const row = db.prepare(`${AFFILIATION_ROW_SELECT} WHERE r.id = ?`).get(id);
     res.status(201).json(row);
 });
@@ -715,6 +722,9 @@ api.get("/stats", (req, res) => {
         const pendingApprovals = db
             .prepare("SELECT COUNT(*) AS c FROM affiliation_requests WHERE status = 'pending'")
             .get();
+        const pendingAgreementApprovals = db
+            .prepare("SELECT COUNT(*) AS c FROM affiliation_requests WHERE agreement_status = 'pending'")
+            .get();
         const recent = db
             .prepare(`SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) AS count
          FROM addresses WHERE created_at >= date('now', '-12 months')
@@ -724,6 +734,7 @@ api.get("/stats", (req, res) => {
             platformAddressStats: true,
             totalAddresses: totalAddresses.c,
             pendingApprovals: pendingApprovals.c,
+            pendingAgreementApprovals: pendingAgreementApprovals.c,
             addressesByType: Object.fromEntries(byType.map((x) => [x.address_type, x.count])),
             affiliationsByStatus: Object.fromEntries(byAffStatus.map((x) => [x.status, x.count])),
             newAddressesLast12Months: recent,
@@ -736,16 +747,26 @@ api.get("/stats", (req, res) => {
     const pendingApprovals = db
         .prepare("SELECT COUNT(*) AS c FROM affiliation_requests WHERE status = 'pending' AND created_by_user_id = ?")
         .get(uid);
+    const pendingAgreementApprovals = db
+        .prepare("SELECT COUNT(*) AS c FROM affiliation_requests WHERE agreement_status = 'pending' AND created_by_user_id = ?")
+        .get(uid);
     res.json({
         platformAddressStats: false,
         totalAddresses: 0,
         pendingApprovals: pendingApprovals.c,
+        pendingAgreementApprovals: pendingAgreementApprovals.c,
         addressesByType: {},
         affiliationsByStatus: Object.fromEntries(byAffStatus.map((x) => [x.status, x.count])),
         newAddressesLast12Months: [],
     });
 });
 app.use("/api", api);
+app.use((err, _req, res, _next) => {
+    console.error(err);
+    const msg = err instanceof Error ? err.message : "服务器错误";
+    if (!res.headersSent)
+        res.status(500).json({ error: msg });
+});
 const server = app.listen(PORT, () => {
     console.log(`API listening on http://localhost:${PORT}`);
 });

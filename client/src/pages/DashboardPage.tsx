@@ -51,7 +51,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid sm:grid-cols-2 gap-4 ${showPlatformAddressStats ? "lg:grid-cols-3 xl:grid-cols-5" : "lg:grid-cols-3"}`}>
         {isAdmin ? (
           <Link to="/addresses" className={cardBase}>
             <p className="text-xs uppercase tracking-wide text-slate-500">地址资源总数</p>
@@ -77,6 +77,15 @@ export default function DashboardPage() {
           </p>
           <p className="text-3xl font-semibold text-white mt-2 tabular-nums">{stats.pendingApprovals}</p>
           <p className="text-xs text-slate-500 mt-2 group-hover:text-slate-400">需及时处理 →</p>
+        </Link>
+        <Link to="/affiliations" className={cardBase}>
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            {showPlatformAddressStats ? "待审批协议" : "我的协议待审"}
+          </p>
+          <p className="text-3xl font-semibold text-violet-300 mt-2 tabular-nums">
+            {stats.pendingAgreementApprovals ?? 0}
+          </p>
+          <p className="text-xs text-slate-500 mt-2 group-hover:text-slate-400">进入挂靠流程 →</p>
         </Link>
         {showPlatformAddressStats ? (
           <>
