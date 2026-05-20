@@ -17,13 +17,19 @@ export interface ManagedUser {
   created_at: string;
 }
 
-export type AddressType = "affiliation" | "coworking" | "business_secretary";
+export type AddressType = "coworking" | "business_secretary";
 
 export const ADDRESS_TYPE_LABELS: Record<AddressType, string> = {
-  affiliation: "地址挂靠",
   coworking: "集中办公区",
   business_secretary: "商务秘书",
 };
+
+/** 展示用；兼容库内已迁移的旧值 affiliation */
+export function addressTypeLabel(type: string): string {
+  if (type === "coworking" || type === "business_secretary") return ADDRESS_TYPE_LABELS[type];
+  if (type === "affiliation") return ADDRESS_TYPE_LABELS.coworking;
+  return type;
+}
 
 export type AddressOccupancyStatus = "available" | "occupied";
 

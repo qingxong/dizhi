@@ -163,10 +163,10 @@ app.use("/api/auth", authRouter);
 const api = express.Router();
 api.use(requireAuth);
 
-const ADDRESS_TYPES = ["affiliation", "coworking", "business_secretary"] as const;
+const ADDRESS_TYPES = ["coworking", "business_secretary"] as const;
 type AddressType = (typeof ADDRESS_TYPES)[number];
 
-const AFFILIATION_SERVICE_TYPES = ["地址挂靠", "集中办公区", "商务秘书"] as const;
+const AFFILIATION_SERVICE_TYPES = ["集中办公区", "商务秘书"] as const;
 type AffiliationServiceTypeLabel = (typeof AFFILIATION_SERVICE_TYPES)[number];
 
 function isAddressType(v: unknown): v is AddressType {
@@ -174,9 +174,10 @@ function isAddressType(v: unknown): v is AddressType {
 }
 
 const ADDRESS_TYPE_CN_TO_EN: Record<string, AddressType> = {
-  地址挂靠: "affiliation",
   集中办公区: "coworking",
   商务秘书: "business_secretary",
+  /** 历史 Excel 中「地址挂靠」按集中办公区入库 */
+  地址挂靠: "coworking",
 };
 
 function normalizeAddressTypeImport(raw: string): AddressType | null {
@@ -189,12 +190,12 @@ function affiliationServiceTypeOrDefault(v: unknown): AffiliationServiceTypeLabe
   if (typeof v === "string" && (AFFILIATION_SERVICE_TYPES as readonly string[]).includes(v)) {
     return v as AffiliationServiceTypeLabel;
   }
-  return "地址挂靠";
+  if (v === "地址挂靠") return "集中办公区";
+  return "集中办公区";
 }
 
 function serviceTypeFromAddressType(type: AddressType): AffiliationServiceTypeLabel {
   const map: Record<AddressType, AffiliationServiceTypeLabel> = {
-    affiliation: "地址挂靠",
     coworking: "集中办公区",
     business_secretary: "商务秘书",
   };
@@ -297,7 +298,7 @@ api.post("/addresses/import", requireAdmin, (req, res) => {
     const typeNorm = normalizeAddressTypeImport(typeRaw);
     if (!typeNorm || !region || !detail) {
       const parts: string[] = [];
-      if (!typeNorm) parts.push("address_type 不合法（须为 affiliation、coworking、business_secretary 或对应中文名称）");
+      if (!typeNorm) parts.push("address_type 不合法（须为 coworking、business_secretary 或对应中文名称）");
       if (!region) parts.push("address_region 不能为空");
       if (!detail) parts.push("detail_address 不能为空");
       details.push({ row: i + 1, message: `第 ${i + 1} 条：${parts.join("；")}` });

@@ -28,7 +28,7 @@ if (addrTable) {
 db.exec(`
   CREATE TABLE IF NOT EXISTS addresses (
     id TEXT PRIMARY KEY,
-    address_type TEXT NOT NULL CHECK (address_type IN ('affiliation', 'coworking', 'business_secretary')),
+    address_type TEXT NOT NULL CHECK (address_type IN ('coworking', 'business_secretary')),
     address_region TEXT NOT NULL,
     detail_address TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -40,7 +40,7 @@ db.exec(`
     address_id TEXT NOT NULL REFERENCES addresses(id) ON DELETE CASCADE,
     applicant_name TEXT NOT NULL,
     applicant_dept TEXT NOT NULL DEFAULT '',
-    service_type TEXT NOT NULL DEFAULT '地址挂靠',
+    service_type TEXT NOT NULL DEFAULT '集中办公区',
     status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'approved', 'rejected')),
     notes TEXT,
     reviewer_name TEXT,
@@ -210,11 +210,11 @@ db.exec(`
       CREATE TABLE IF NOT EXISTS affiliation_requests_mig (
         id TEXT PRIMARY KEY,
         address_id TEXT REFERENCES addresses(id) ON DELETE SET NULL,
-        requested_address_type TEXT NOT NULL DEFAULT 'affiliation',
+        requested_address_type TEXT NOT NULL DEFAULT 'coworking',
         requested_address_region TEXT NOT NULL DEFAULT '',
         applicant_name TEXT NOT NULL,
         applicant_dept TEXT NOT NULL DEFAULT '',
-        service_type TEXT NOT NULL DEFAULT '地址挂靠',
+        service_type TEXT NOT NULL DEFAULT '集中办公区',
         status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'approved', 'rejected')),
         notes TEXT,
         reviewer_name TEXT,
@@ -258,7 +258,7 @@ db.exec(`
         COALESCE(
           r.requested_address_type,
           (SELECT address_type FROM addresses a WHERE a.id = r.address_id),
-          'affiliation'
+          'coworking'
         ),
         COALESCE(
           NULLIF(TRIM(r.requested_address_region), ''),
@@ -286,6 +286,13 @@ db.exec(`
 }
 
 db.exec("CREATE INDEX IF NOT EXISTS idx_affiliation_owner ON affiliation_requests(created_by_user_id)");
+
+/** 移除已废弃的地址类型「地址挂靠」(affiliation) */
+db.exec(`UPDATE addresses SET address_type = 'coworking' WHERE address_type = 'affiliation'`);
+db.exec(
+  `UPDATE affiliation_requests SET requested_address_type = 'coworking' WHERE requested_address_type = 'affiliation'`,
+);
+db.exec(`UPDATE affiliation_requests SET service_type = '集中办公区' WHERE service_type = '地址挂靠'`);
 
 const userCount = (db.prepare("SELECT COUNT(*) AS c FROM users").get() as { c: number }).c;
 if (userCount === 0) {
@@ -320,13 +327,8 @@ if (userCount === 0) {
 const count = (db.prepare("SELECT COUNT(*) AS c FROM addresses").get() as { c: number }).c;
 if (count === 0) {
   const t = new Date().toISOString();
-  const a1 = "addr_demo_1";
   const a2 = "addr_demo_2";
   const a3 = "addr_demo_3";
-  db.prepare(
-    `INSERT INTO addresses (id, address_type, address_region, detail_address, created_at, updated_at)
-     VALUES (?,?,?,?,?,?)`,
-  ).run(a1, "affiliation", "上海市浦东新区", "张江高科园区博云路2号A幢801室", t, t);
   db.prepare(
     `INSERT INTO addresses (id, address_type, address_region, detail_address, created_at, updated_at)
      VALUES (?,?,?,?,?,?)`,
@@ -351,11 +353,11 @@ if (count === 0) {
   ).run(
     r1,
     null,
-    "affiliation",
-    "上海市浦东新区",
+    "coworking",
+    "上海市静安区",
     "赵晨",
     "",
-    "地址挂靠",
+    "集中办公区",
     "pending",
     "年度续签挂靠服务",
     "channel",

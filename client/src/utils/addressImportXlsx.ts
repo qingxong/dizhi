@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 export function downloadAddressImportTemplateXlsx(): void {
   const data = [
     ["地址类型", "地址区域", "详细地址"],
-    ["affiliation", "海南省海口市龙华区", "兴洋大道181号"],
+    ["coworking", "海南省海口市龙华区", "兴洋大道181号"],
   ];
   const ws = XLSX.utils.aoa_to_sheet(data);
   ws["!cols"] = [{ wch: 22 }, { wch: 28 }, { wch: 42 }];

@@ -213,7 +213,6 @@ export function registerCustomerRoutes(api) {
         const uid = req.session.userId;
         if (!uid)
             return res.status(401).json({ error: "未登录" });
-        const isAdmin = req.session.role === "admin";
         const userRow = db.prepare("SELECT oa_member_id FROM users WHERE id = ?").get(uid);
         const oaMemberId = userRow?.oa_member_id?.trim() || null;
         try {

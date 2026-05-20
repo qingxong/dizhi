@@ -1,6 +1,6 @@
 import { db } from "./db.js";
 
-export type AddressType = "affiliation" | "coworking" | "business_secretary";
+export type AddressType = "coworking" | "business_secretary";
 
 /** 列表/详情：关联地址字段（未分配时 detail 为空） */
 export const AFFILIATION_ROW_SELECT = `

@@ -121,13 +121,14 @@ export function parseAddressImportText(text: string): ParseAddressImportResult {
 }
 
 const CN_TO_EN: Record<string, AddressType> = {
-  [ADDRESS_TYPE_LABELS.affiliation]: "affiliation",
   [ADDRESS_TYPE_LABELS.coworking]: "coworking",
   [ADDRESS_TYPE_LABELS.business_secretary]: "business_secretary",
+  /** 历史表头「地址挂靠」按集中办公区导入 */
+  地址挂靠: "coworking",
 };
 
 export function isValidAddressTypeCode(s: string): s is AddressType {
-  return s === "affiliation" || s === "coworking" || s === "business_secretary";
+  return s === "coworking" || s === "business_secretary";
 }
 
 export function normalizeAddressTypeForClient(raw: string): AddressType | null {

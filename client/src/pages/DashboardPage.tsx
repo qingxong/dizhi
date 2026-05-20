@@ -33,7 +33,6 @@ export default function DashboardPage() {
   const showPlatformAddressStats = stats.platformAddressStats !== false;
   const myAffiliationTotal = Object.values(stats.affiliationsByStatus).reduce((a, b) => a + b, 0);
 
-  const aff = stats.addressesByType["affiliation"] ?? 0;
   const cow = stats.addressesByType["coworking"] ?? 0;
   const sec = stats.addressesByType["business_secretary"] ?? 0;
 
@@ -89,12 +88,8 @@ export default function DashboardPage() {
         </Link>
         {showPlatformAddressStats ? (
           <>
-            <TypeStatCard title={ADDRESS_TYPE_LABELS.affiliation} count={aff} admin={isAdmin} />
-            <TypeStatCard
-              title={`${ADDRESS_TYPE_LABELS.coworking} / ${ADDRESS_TYPE_LABELS.business_secretary}`}
-              count={cow + sec}
-              admin={isAdmin}
-            />
+            <TypeStatCard title={ADDRESS_TYPE_LABELS.coworking} count={cow} admin={isAdmin} />
+            <TypeStatCard title={ADDRESS_TYPE_LABELS.business_secretary} count={sec} admin={isAdmin} />
           </>
         ) : null}
       </div>

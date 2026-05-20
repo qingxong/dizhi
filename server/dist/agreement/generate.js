@@ -8,9 +8,9 @@ import { amountToChineseUpper } from "./amountCn.js";
 import { AGREEMENT_GENERATED_DIR, AGREEMENT_TEMPLATE_FILE, UPLOADS_ROOT } from "./paths.js";
 const execFileAsync = promisify(execFile);
 const ADDRESS_TYPE_LABELS = {
-    affiliation: "地址挂靠",
     coworking: "集中办公区",
     business_secretary: "商务秘书",
+    affiliation: "集中办公区",
 };
 export function buildAgreementTemplateData(row) {
     const amount = String(row.agreement_amount ?? "").trim();

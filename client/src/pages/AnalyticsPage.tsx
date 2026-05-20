@@ -3,7 +3,7 @@ import { api } from "../api";
 import type { StatsResponse } from "../types";
 import { ADDRESS_TYPE_LABELS, type AddressType } from "../types";
 
-const ADDRESS_TYPES_ORDER: AddressType[] = ["affiliation", "coworking", "business_secretary"];
+const ADDRESS_TYPES_ORDER: AddressType[] = ["coworking", "business_secretary"];
 
 export default function AnalyticsPage() {
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -33,7 +33,7 @@ export default function AnalyticsPage() {
   const typeCounts = ADDRESS_TYPES_ORDER.map((t) => stats.addressesByType[t] ?? 0);
   const typeTotal = typeCounts.reduce((a, b) => a + b, 0) || 1;
   const typePct = typeCounts.map((c) => (c / typeTotal) * 100);
-  const typeColors = ["bg-amber-500/85", "bg-emerald-500/85", "bg-violet-500/85"];
+  const typeColors = ["bg-emerald-500/85", "bg-violet-500/85"];
 
   const affTotal = Object.values(stats.affiliationsByStatus).reduce((a, b) => a + b, 0) || 1;
 

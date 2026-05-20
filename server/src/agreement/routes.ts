@@ -74,10 +74,10 @@ export function registerAgreementRoutes(
         legal_email: "demo@example.com",
         applicant_name: "李业务",
         group_name: "示例服务群",
-        address_type: "affiliation",
+        address_type: "coworking",
         address_region: "海南省海口市",
         detail_address: "海南省海口市示例区示例街道 88 号",
-        service_type: "地址挂靠",
+        service_type: "集中办公区",
       }),
     });
   });

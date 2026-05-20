@@ -3,7 +3,7 @@ import type { ChangeEvent, FormEvent } from "react";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { api } from "../api";
 import type { AffiliationContactType, AffiliationRequest, AddressType } from "../types";
-import { ADDRESS_TYPE_LABELS, AGREEMENT_STATUS_LABELS } from "../types";
+import { ADDRESS_TYPE_LABELS, AGREEMENT_STATUS_LABELS, addressTypeLabel } from "../types";
 import { validateMaterialFormFormats } from "../utils/contactFormat";
 import { CustomerPicker } from "../components/CustomerPicker.tsx";
 import { AffiliationAgreementActions } from "./AffiliationAgreementActions.tsx";
@@ -250,7 +250,6 @@ function AffiliationAddressPreferenceFields({
         }}
         className={inputCls()}
       >
-        <option value="affiliation">{ADDRESS_TYPE_LABELS.affiliation}</option>
         <option value="coworking">{ADDRESS_TYPE_LABELS.coworking}</option>
         <option value="business_secretary">{ADDRESS_TYPE_LABELS.business_secretary}</option>
       </select>
@@ -599,7 +598,7 @@ export default function AffiliationsPage() {
         r.review_comment,
         contactLabel[ct],
         statusText[r.status] ?? r.status,
-        ADDRESS_TYPE_LABELS[r.address_type],
+        addressTypeLabel(r.address_type),
       ]
         .filter(Boolean)
         .join(" ")
@@ -1312,7 +1311,7 @@ function EditAffiliationModal({
 
 function NewAffiliationModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { user } = useAuth();
-  const [addressType, setAddressType] = useState<AddressType>("affiliation");
+  const [addressType, setAddressType] = useState<AddressType>("coworking");
   const [addressRegion, setAddressRegion] = useState("");
   const [applicantName, setApplicantName] = useState(() => user?.displayName ?? "");
   const [groupName, setGroupName] = useState("");

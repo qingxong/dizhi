@@ -133,15 +133,16 @@ app.use("/api/auth", authRouter);
 /** ---------- Protected API（须挂在 /api/auth 之后，避免吞掉登录路由）---------- */
 const api = express.Router();
 api.use(requireAuth);
-const ADDRESS_TYPES = ["affiliation", "coworking", "business_secretary"];
-const AFFILIATION_SERVICE_TYPES = ["地址挂靠", "集中办公区", "商务秘书"];
+const ADDRESS_TYPES = ["coworking", "business_secretary"];
+const AFFILIATION_SERVICE_TYPES = ["集中办公区", "商务秘书"];
 function isAddressType(v) {
     return typeof v === "string" && ADDRESS_TYPES.includes(v);
 }
 const ADDRESS_TYPE_CN_TO_EN = {
-    地址挂靠: "affiliation",
     集中办公区: "coworking",
     商务秘书: "business_secretary",
+    /** 历史 Excel 中「地址挂靠」按集中办公区入库 */
+    地址挂靠: "coworking",
 };
 function normalizeAddressTypeImport(raw) {
     const s = raw.trim();
@@ -153,11 +154,12 @@ function affiliationServiceTypeOrDefault(v) {
     if (typeof v === "string" && AFFILIATION_SERVICE_TYPES.includes(v)) {
         return v;
     }
-    return "地址挂靠";
+    if (v === "地址挂靠")
+        return "集中办公区";
+    return "集中办公区";
 }
 function serviceTypeFromAddressType(type) {
     const map = {
-        affiliation: "地址挂靠",
         coworking: "集中办公区",
         business_secretary: "商务秘书",
     };
@@ -249,7 +251,7 @@ api.post("/addresses/import", requireAdmin, (req, res) => {
         if (!typeNorm || !region || !detail) {
             const parts = [];
             if (!typeNorm)
-                parts.push("address_type 不合法（须为 affiliation、coworking、business_secretary 或对应中文名称）");
+                parts.push("address_type 不合法（须为 coworking、business_secretary 或对应中文名称）");
             if (!region)
                 parts.push("address_region 不能为空");
             if (!detail)

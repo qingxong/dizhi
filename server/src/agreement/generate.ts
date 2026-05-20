@@ -28,9 +28,9 @@ export type AgreementTemplateRow = Record<string, unknown> & {
 };
 
 const ADDRESS_TYPE_LABELS: Record<string, string> = {
-  affiliation: "地址挂靠",
   coworking: "集中办公区",
   business_secretary: "商务秘书",
+  affiliation: "集中办公区",
 };
 
 export function buildAgreementTemplateData(row: AgreementTemplateRow): Record<string, string> {

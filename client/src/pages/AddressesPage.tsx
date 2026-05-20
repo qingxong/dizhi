@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import type { Address, AddressOccupancyStatus, AddressType } from "../types";
-import { ADDRESS_TYPE_LABELS } from "../types";
+import { ADDRESS_TYPE_LABELS, addressTypeLabel } from "../types";
 import AddressImportModal from "./AddressImportModal.tsx";
 
 const occupancyStyle: Record<AddressOccupancyStatus, string> = {
@@ -93,7 +93,6 @@ export default function AddressesPage() {
           className="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-200"
         >
           <option value="">全部类型</option>
-          <option value="affiliation">{ADDRESS_TYPE_LABELS.affiliation}</option>
           <option value="coworking">{ADDRESS_TYPE_LABELS.coworking}</option>
           <option value="business_secretary">{ADDRESS_TYPE_LABELS.business_secretary}</option>
         </select>
@@ -147,7 +146,7 @@ export default function AddressesPage() {
                   <tr key={row.id} className="hover:bg-slate-800/30">
                     <td className="px-4 py-3">
                       <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-slate-700/80 text-slate-200">
-                        {ADDRESS_TYPE_LABELS[row.address_type]}
+                        {addressTypeLabel(row.address_type)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-white font-medium">{row.address_region}</td>
@@ -241,7 +240,7 @@ function AddressModal({
   onSaved: () => void;
 }) {
   const [form, setForm] = useState({
-    address_type: (initial?.address_type ?? "affiliation") as AddressType,
+    address_type: (initial?.address_type ?? "coworking") as AddressType,
     address_region: initial?.address_region ?? "",
     detail_address: initial?.detail_address ?? "",
   });
@@ -301,7 +300,6 @@ function AddressModal({
             onChange={(e) => setForm((f) => ({ ...f, address_type: e.target.value as AddressType }))}
             className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm"
           >
-            <option value="affiliation">{ADDRESS_TYPE_LABELS.affiliation}</option>
             <option value="coworking">{ADDRESS_TYPE_LABELS.coworking}</option>
             <option value="business_secretary">{ADDRESS_TYPE_LABELS.business_secretary}</option>
           </select>
