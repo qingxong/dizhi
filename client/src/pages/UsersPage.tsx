@@ -82,7 +82,7 @@ export default function UsersPage() {
       <div>
         <h2 className="text-xl font-semibold text-white">用户管理</h2>
         <p className="text-slate-400 text-sm mt-1">
-          仅管理员可访问：修改当前登录管理员密码，以及新增、编辑、删除业务员账号。
+          仅管理员可访问：修改当前登录管理员密码，以及新增、编辑、删除业务员账号。业务员需配置 OA 成员 ID 后方可从 OA 同步本人客户。
         </p>
       </div>
 
@@ -177,6 +177,7 @@ export default function UsersPage() {
               <tr>
                 <th className="px-4 py-3 font-medium">用户名</th>
                 <th className="px-4 py-3 font-medium">显示名称</th>
+                <th className="px-4 py-3 font-medium">OA 成员 ID</th>
                 <th className="px-4 py-3 font-medium">创建日期</th>
                 <th className="px-4 py-3 font-medium w-40">操作</th>
               </tr>
@@ -184,13 +185,13 @@ export default function UsersPage() {
             <tbody className="divide-y divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                     加载中…
                   </td>
                 </tr>
               ) : salesUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                     暂无业务员，请点击「新建业务员」。
                   </td>
                 </tr>
@@ -199,6 +200,9 @@ export default function UsersPage() {
                   <tr key={r.id} className="hover:bg-slate-800/30">
                     <td className="px-4 py-3 text-white font-medium">{r.username}</td>
                     <td className="px-4 py-3 text-slate-300">{r.display_name}</td>
+                    <td className="px-4 py-3 text-slate-500 text-xs font-mono max-w-[140px] truncate" title={r.oa_member_id ?? ""}>
+                      {r.oa_member_id || "—"}
+                    </td>
                     <td className="px-4 py-3 text-slate-500 text-xs">{formatTime(r.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -367,6 +371,7 @@ function EditSalesModal({
   const [username, setUsername] = useState(row.username);
   const [display_name, setDisplay_name] = useState(row.display_name);
   const [password, setPassword] = useState("");
+  const [oa_member_id, setOa_member_id] = useState(row.oa_member_id ?? "");
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -374,9 +379,10 @@ function EditSalesModal({
     onError(null);
     setBusy(true);
     try {
-      const body: { username: string; display_name: string; password?: string } = {
+      const body: { username: string; display_name: string; password?: string; oa_member_id: string | null } = {
         username: username.trim(),
         display_name: display_name.trim(),
+        oa_member_id: oa_member_id.trim() || null,
       };
       if (password.trim()) body.password = password;
       await api.users.update(row.id, body);
@@ -417,6 +423,14 @@ function EditSalesModal({
             className={inputCls()}
             placeholder="至少 6 位"
             autoComplete="new-password"
+          />
+          <label className="block text-xs text-slate-500">OA 成员 ID（简道云成员 _id，用于同步客户）</label>
+          <input
+            value={oa_member_id}
+            onChange={(e) => setOa_member_id(e.target.value)}
+            className={inputCls()}
+            placeholder="如 5577ebc4504e8e77036d2a09"
+            autoComplete="off"
           />
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-600">

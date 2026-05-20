@@ -1,3 +1,4 @@
+import "dotenv/config";
 import bcrypt from "bcryptjs";
 import cors from "cors";
 import express from "express";
@@ -11,6 +12,7 @@ import { materialFromBody, materialPatchFromBody, validateAffiliationMaterial, }
 import { db } from "./db.js";
 import { ID_PHOTO_UPLOAD_DIR, idPhotoMulter } from "./idPhotoUpload.js";
 import { registerAgreementRoutes } from "./agreement/routes.js";
+import { registerCustomerRoutes } from "./customers.js";
 import { requireAdmin, requireAuth } from "./middleware/auth.js";
 function routeId(p) {
     if (p == null)
@@ -328,7 +330,7 @@ function hashPassword(plain) {
 /** 用户管理（仅管理员） */
 api.get("/users", requireAdmin, (_req, res) => {
     const rows = db
-        .prepare(`SELECT id, username, role, display_name, created_at FROM users ORDER BY role DESC, username COLLATE NOCASE`)
+        .prepare(`SELECT id, username, role, display_name, oa_member_id, created_at FROM users ORDER BY role DESC, username COLLATE NOCASE`)
         .all();
     res.json(rows);
 });
@@ -373,7 +375,7 @@ api.post("/users", requireAdmin, (req, res) => {
     const t = nowIso();
     db.prepare(`INSERT INTO users (id, username, password_hash, role, display_name, created_at) VALUES (?,?,?,?,?,?)`).run(id, username, hashPassword(password), "sales", display_name, t);
     const out = db
-        .prepare(`SELECT id, username, role, display_name, created_at FROM users WHERE id = ?`)
+        .prepare(`SELECT id, username, role, display_name, oa_member_id, created_at FROM users WHERE id = ?`)
         .get(id);
     res.status(201).json(out);
 });
@@ -391,10 +393,18 @@ api.patch("/users/:id", requireAdmin, (req, res) => {
     const passwordRaw = typeof b.password === "string" ? b.password : undefined;
     const password = passwordRaw !== undefined && passwordRaw !== "" ? passwordRaw : undefined;
     const username = typeof b.username === "string" ? b.username.trim() : undefined;
+    const oa_member_id = b.oa_member_id === null || b.oa_member_id === ""
+        ? null
+        : typeof b.oa_member_id === "string"
+            ? b.oa_member_id.trim() || null
+            : undefined;
     if (display_name !== undefined && display_name.length === 0) {
         return res.status(400).json({ error: "显示名称不能为空" });
     }
-    if (display_name === undefined && password === undefined && username === undefined) {
+    if (display_name === undefined &&
+        password === undefined &&
+        username === undefined &&
+        oa_member_id === undefined) {
         return res.status(400).json({ error: "请提供要修改的字段" });
     }
     if (password !== undefined && password.length < 6) {
@@ -425,9 +435,15 @@ api.patch("/users/:id", requireAdmin, (req, res) => {
         fields.push("password_hash = ?");
         vals.push(hashPassword(password));
     }
+    if (oa_member_id !== undefined) {
+        fields.push("oa_member_id = ?");
+        vals.push(oa_member_id);
+    }
     vals.push(id);
     db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...vals);
-    const out = db.prepare(`SELECT id, username, role, display_name, created_at FROM users WHERE id = ?`).get(id);
+    const out = db
+        .prepare(`SELECT id, username, role, display_name, oa_member_id, created_at FROM users WHERE id = ?`)
+        .get(id);
     res.json(out);
 });
 api.delete("/users/:id", requireAdmin, (req, res) => {
@@ -709,6 +725,7 @@ registerAgreementRoutes(api, {
     canAccessAffiliationRow,
     affiliationRowSelect: AFFILIATION_ROW_SELECT,
 });
+registerCustomerRoutes(api);
 api.get("/stats", (req, res) => {
     const isAdmin = req.session.role === "admin";
     const uid = req.session.userId;

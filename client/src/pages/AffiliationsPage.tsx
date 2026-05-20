@@ -5,6 +5,7 @@ import { api } from "../api";
 import type { AffiliationContactType, AffiliationRequest, AddressType } from "../types";
 import { ADDRESS_TYPE_LABELS, AGREEMENT_STATUS_LABELS } from "../types";
 import { validateMaterialFormFormats } from "../utils/contactFormat";
+import { CustomerPicker } from "../components/CustomerPicker.tsx";
 import { AffiliationAgreementActions } from "./AffiliationAgreementActions.tsx";
 
 const statusStyle: Record<string, string> = {
@@ -386,6 +387,7 @@ function MaterialFormBody({
           </label>
         </div>
       </div>
+      <CustomerPicker contactType={value.contact_type} onApply={(patch) => onChange(patch)} />
       {isChannel && (
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 space-y-3">
           <div className="text-xs font-medium text-violet-300/90">渠道材料</div>

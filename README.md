@@ -149,6 +149,19 @@ cd client && npm run preview
 
 ---
 
+## 客户管理与 OA 同步
+
+1. 在服务器环境变量中配置 `OA_API_KEY`（见 `.env.example`）。
+2. 管理员在 **用户管理** 为业务员填写 **OA 成员 ID**（简道云成员 `_id`，与 OA「销售负责人」一致）。
+3. 在 **客户管理** 点击 **从 OA 同步**（仅同步 OA「销售负责人」为本人 `oa_member_id` 的客户；电话取自对接人子表单或历史主表字段）。
+4. 在 **挂靠流程** 新建/编辑申请时，使用 **从客户档案带出** 选择客户，自动填入联络人文字信息（证件照仍需上传）。
+
+字段映射：客户名称 → 渠道公司名 / 直客法人姓名；对接人子表单第 1 行 → 常用联系人或法人电话，第 2 行 → 备用/企业备用。
+
+同步规则：须有有效电话（**子表单第 1 行** 或 **历史主表联系方式**）。无电话、非直客/渠道类型会跳过。遇 **4004 限流** 会自动重试；请勿连续点击同步。
+
+---
+
 ## 环境变量
 
 | 变量 | 说明 |
@@ -156,6 +169,10 @@ cd client && npm run preview
 | `PORT` / `API_PORT` | API 监听端口，默认 **3889**；修改后须与 Vite 代理端口一致 |
 | `SESSION_SECRET` | 会话签名密钥，**生产必填** |
 | `LIBREOFFICE_PATH` | （可选）LibreOffice `soffice` 可执行文件完整路径，用于协议 DOCX→PDF |
+| `OA_API_KEY` | OA 开放平台密钥，用于「客户管理 → 从 OA 同步」 |
+| `OA_API_BASE_URL` | （可选）默认 `https://wx.hnzhcyy.cn` |
+| `OA_PAGE_DELAY_MS` | （可选）分页请求间隔，默认 **600** |
+| `OA_RATE_LIMIT_RETRY_MS` | （可选）遇 4004 后重试前等待，默认 **2500** |
 | `CLIENT_ORIGIN` | （可选）CORS 允许来源 |
 | `TRUST_PROXY` | 设为 `1` 时信任反向代理（影响 Cookie `secure` 等） |
 | `COOKIE_SECURE` | 设为 `1` 时 Cookie 仅 HTTPS |

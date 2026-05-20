@@ -127,6 +127,55 @@ db.exec(`
   add("agreement_completed_at", "TEXT");
 }
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS customers (
+    id TEXT PRIMARY KEY,
+    customer_type TEXT NOT NULL CHECK (customer_type IN ('channel', 'direct')),
+    channel_company_name TEXT,
+    channel_common_contact_name TEXT,
+    channel_common_contact_phone TEXT,
+    channel_backup_contact_name TEXT,
+    channel_backup_contact_phone TEXT,
+    legal_name TEXT,
+    legal_id_number TEXT,
+    legal_phone TEXT,
+    legal_contact_address TEXT,
+    legal_email TEXT,
+    enterprise_backup_name TEXT,
+    enterprise_backup_phone TEXT,
+    created_by_user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_customers_owner ON customers(created_by_user_id);
+  CREATE INDEX IF NOT EXISTS idx_customers_type ON customers(customer_type);
+`);
+
+{
+  const userCols = new Set(
+    (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name),
+  );
+  if (!userCols.has("oa_member_id")) {
+    db.exec("ALTER TABLE users ADD COLUMN oa_member_id TEXT");
+  }
+}
+
+{
+  const custCols = new Set(
+    (db.prepare("PRAGMA table_info(customers)").all() as { name: string }[]).map((c) => c.name),
+  );
+  const addCust = (col: string, def: string) => {
+    if (!custCols.has(col)) {
+      db.exec(`ALTER TABLE customers ADD COLUMN ${col} ${def}`);
+      custCols.add(col);
+    }
+  };
+  addCust("oa_entry_id", "TEXT");
+  addCust("oa_customer_sn", "TEXT");
+  addCust("source", "TEXT NOT NULL DEFAULT 'local'");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_oa_entry ON customers(oa_entry_id) WHERE oa_entry_id IS NOT NULL");
+}
+
 /** 挂靠申请：业务员只填类型/区域，审批后分配 address_id；将 address_id 改为可空 */
 {
   type ColInfo = { name: string; notnull: number };

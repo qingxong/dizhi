@@ -4,7 +4,10 @@ import type {
   AffiliationRequest,
   AgreementPlaceholderDoc,
   AuthUser,
+  Customer,
+  CustomerType,
   ManagedUser,
+  OaSyncResult,
   StatsResponse,
 } from "./types";
 
@@ -204,6 +207,44 @@ export const api = {
     download: () => fetch("/api/agreement-template/download", cred),
   },
   stats: () => fetch("/api/stats", cred).then((r) => parseJson<StatsResponse>(r)),
+  customers: {
+    list: (params?: { type?: CustomerType; q?: string }) => {
+      const sp = new URLSearchParams();
+      if (params?.type) sp.set("type", params.type);
+      if (params?.q) sp.set("q", params.q);
+      const qs = sp.toString();
+      return fetch(`/api/customers${qs ? `?${qs}` : ""}`, cred).then((r) => parseJson<Customer[]>(r));
+    },
+    get: (id: string) => fetch(`/api/customers/${id}`, cred).then((r) => parseJson<Customer>(r)),
+    create: (body: Record<string, unknown>) =>
+      fetch("/api/customers", {
+        ...cred,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => parseJson<Customer>(r)),
+    update: (id: string, body: Record<string, unknown>) =>
+      fetch(`/api/customers/${id}`, {
+        ...cred,
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => parseJson<Customer>(r)),
+    remove: (id: string) =>
+      fetch(`/api/customers/${id}`, { ...cred, method: "DELETE" }).then((r) => {
+        if (!resOk(r)) throw new Error("删除失败");
+      }),
+    checkDuplicate: (params: Record<string, string>) => {
+      const sp = new URLSearchParams(params);
+      return fetch(`/api/customers/check-duplicate?${sp}`, cred).then(
+        (r) => parseJson<{ duplicate: boolean; message?: string; existing_id?: string }>(r),
+      );
+    },
+    syncFromOa: () =>
+      fetch("/api/customers/sync-from-oa", { ...cred, method: "POST" }).then((r) =>
+        parseJson<OaSyncResult>(r),
+      ),
+  },
   users: {
     list: () => fetch("/api/users", cred).then((r) => parseJson<ManagedUser[]>(r)),
     changeMyPassword: (current_password: string, new_password: string) =>
@@ -220,7 +261,7 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => parseJson<ManagedUser>(r)),
-    update: (id: string, body: { username?: string; display_name?: string; password?: string }) =>
+    update: (id: string, body: { username?: string; display_name?: string; password?: string; oa_member_id?: string | null }) =>
       fetch(`/api/users/${id}`, {
         ...cred,
         method: "PATCH",

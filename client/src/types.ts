@@ -13,6 +13,7 @@ export interface ManagedUser {
   username: string;
   role: UserRole;
   display_name: string;
+  oa_member_id: string | null;
   created_at: string;
 }
 
@@ -62,6 +63,42 @@ export interface AgreementPlaceholderDoc {
 }
 
 export type AffiliationContactType = "channel" | "direct";
+
+export type CustomerType = AffiliationContactType;
+
+/** 客户档案（仅文字信息，不含证件图片） */
+export interface Customer {
+  id: string;
+  customer_type: CustomerType;
+  channel_company_name: string | null;
+  channel_common_contact_name: string | null;
+  channel_common_contact_phone: string | null;
+  channel_backup_contact_name: string | null;
+  channel_backup_contact_phone: string | null;
+  legal_name: string | null;
+  legal_id_number: string | null;
+  legal_phone: string | null;
+  legal_contact_address: string | null;
+  legal_email: string | null;
+  enterprise_backup_name: string | null;
+  enterprise_backup_phone: string | null;
+  oa_entry_id: string | null;
+  oa_customer_sn: string | null;
+  source: "local" | "oa" | string;
+  created_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+  owner_display_name?: string | null;
+  display_name: string;
+}
+
+export interface OaSyncResult {
+  imported: number;
+  updated: number;
+  skipped: number;
+  total_fetched: number;
+  errors: string[];
+}
 
 export interface AffiliationRequest {
   id: string;

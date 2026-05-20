@@ -5,6 +5,7 @@ import RequireAuth from "./auth/RequireAuth.tsx";
 import App from "./App.tsx";
 import AddressesPage from "./pages/AddressesPage.tsx";
 import AffiliationsPage from "./pages/AffiliationsPage.tsx";
+import CustomersPage from "./pages/CustomersPage.tsx";
 import AnalyticsPage from "./pages/AnalyticsPage.tsx";
 import DashboardPage from "./pages/DashboardPage.tsx";
 import LoginPage from "./pages/LoginPage.tsx";
@@ -24,6 +25,7 @@ export default function RootRoutes() {
               <Route path="users" element={<UsersPage />} />
               <Route path="agreement-template" element={<AgreementTemplatePage />} />
             </Route>
+            <Route path="customers" element={<CustomersPage />} />
             <Route path="affiliations" element={<AffiliationsPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />

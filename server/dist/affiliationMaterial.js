@@ -64,8 +64,6 @@ function nonempty(v) {
 export function validateAffiliationMaterial(row) {
     const ct = row.contact_type === "channel" ? "channel" : "direct";
     if (ct === "channel") {
-        if (!nonempty(row.channel_company_name))
-            return "渠道材料：请填写渠道公司名";
         if (!nonempty(row.channel_common_contact_name))
             return "渠道材料：请填写渠道常用联系人姓名";
         if (!nonempty(row.channel_common_contact_phone))

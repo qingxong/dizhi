@@ -6,6 +6,7 @@ const navAll = [
   { to: "/addresses", label: "地址库", adminOnly: true },
   { to: "/users", label: "用户管理", adminOnly: true },
   { to: "/agreement-template", label: "协议模板", adminOnly: true },
+  { to: "/customers", label: "客户管理" },
   { to: "/affiliations", label: "挂靠流程" },
   { to: "/analytics", label: "统计分析" },
 ] as const;
